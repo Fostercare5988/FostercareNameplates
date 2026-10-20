@@ -65,7 +65,7 @@ end
 -- Validate pooled-frame ownership before consuming any unit data.
 FNP.GetNameplateUnit = function(plate)
     local guid = plate.fnpUnitGUID
-    if guid and C_NamePlate.GetNamePlateForUnit(guid) == plate then
+    if guid and C_NamePlate.GetNamePlateForGUID(guid) == plate then
         return guid
     end
     plate.fnpUnitGUID = nil

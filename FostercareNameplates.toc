@@ -9,6 +9,7 @@
 ## OptionalDeps: FostercareTweaks, BlizzNameplatesPlus, ShaguPlates
 ## DefaultState: disabled
 ## SavedVariablesPerCharacter: FostercareNameplates_Config
+## LoadSavedVariablesFirst: 1
 
 ClassicAPIRequirement.lua
 Core.lua

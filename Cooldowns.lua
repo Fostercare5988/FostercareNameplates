@@ -81,7 +81,7 @@ end
 local function Draw(plate, guid, now, validated)
     local state = CD.states[guid]
     local row = plate.fnpEnemyCooldowns
-    if not state or not plate:IsShown() or (not validated and C_NamePlate.GetNamePlateForUnit(guid) ~= plate)
+    if not state or not plate:IsShown() or (not validated and C_NamePlate.GetNamePlateForGUID(guid) ~= plate)
         or (FNP.GetOverride("nameplate_cd_target", 0) == 1 and guid ~= UnitGUID("target"))
         or not UnitIsPlayer(guid) or not UnitCanAttack("player", guid) then
         HideRow(plate); return
@@ -143,7 +143,7 @@ local function Tick()
         if #state.spells == 0 then CD.states[guid] = nil; CD.count = CD.count - 1 end
     end
     for guid, plate in pairs(visible) do
-        if C_NamePlate.GetNamePlateForUnit(guid) ~= plate then
+        if C_NamePlate.GetNamePlateForGUID(guid) ~= plate then
             visible[guid] = nil
             -- A recycled plate may already display its new unit's icons.
             if plate.fnpEnemyCooldowns and plate.fnpEnemyCooldowns.guid == guid then HideRow(plate) end
@@ -186,7 +186,7 @@ function CD:Observe(unit, id)
     if #state.spells >= MAX_SPELLS then table.remove(state.spells) end
     table.insert(state.spells, 1, { id = id, data = data, start = now, ends = now + data.duration })
     state.last = now
-    local plate = C_NamePlate.GetNamePlateForUnit(guid)
+    local plate = C_NamePlate.GetNamePlateForGUID(guid)
     if plate then visible[guid] = plate; Draw(plate, guid, now) end
     if not ticker then ticker = C_Timer.NewTicker(0.2, Tick) end
 end
@@ -239,7 +239,7 @@ function CD:ApplyConfiguration()
         end)
     end
     for _, guid in ipairs(C_NamePlate.GetNamePlateGUIDs()) do
-        local plate = C_NamePlate.GetNamePlateForUnit(guid)
+        local plate = C_NamePlate.GetNamePlateForGUID(guid)
         if plate then visible[guid] = plate end
     end
     Tick()

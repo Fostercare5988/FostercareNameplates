@@ -231,7 +231,10 @@ module.enable = function(self)
     SyncEvents()
     FNP.SetEventHandler(events, function(_, ev, unit)
         if not active or not FNP.OwnsNameplates() or not unit then return end
-        local plate = C_NamePlate.GetNamePlateForUnit(unit)
+        -- SuperWoW's UNIT_CASTEVENT passes a caster GUID; UNIT_SPELLCAST_* pass unit tokens.
+        local plate
+        if ev == "UNIT_CASTEVENT" then plate = C_NamePlate.GetNamePlateForGUID(unit)
+        else plate = C_NamePlate.GetNamePlateForUnit(unit) end
         if plate and plate.fnpCastbar then plate.fnpCastbar.nextQuery = nil end
     end)
 end
