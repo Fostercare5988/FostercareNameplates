@@ -15,6 +15,7 @@ local NP = { pending = {}, timed = {}, settings = {} }
 FNP.Nameplates = NP
 local lib = FNP.libnameplate
 local ticker, queued, driver
+local auraSlots = {}
 local DETAIL_EVENTS = { "PLAYER_TARGET_CHANGED", "PLAYER_COMBO_POINTS", "UNIT_HEALTH", "UNIT_MAXHEALTH",
     "UNIT_AURA", "UNIT_TARGET", "UNIT_FACTION", "RAID_TARGET_UPDATE", "PLAYER_ENTERING_WORLD", "ADDON_LOADED" }
 
@@ -240,12 +241,13 @@ function NP:Auras(plate, unit)
     -- inference or tooltip parsing. Query only enough results for the capped row.
     if s.cc then ccID = Add(C_UnitAuras.UnitAura(unit, 1, "HARMFUL|CROWD_CONTROL")) end
     if s.own then
+        -- One aura-array walk; by-index getters re-walk from the start per call.
+        local _, total = C_UnitAuras.GetAuraSlots(unit, "HARMFUL|PLAYER", nil, nil, auraSlots)
         local own = 0
-        for i = 1, 40 do
+        for i = 1, total or 0 do
             if own >= s.auraCount then break end
-            local name, texture, stacks, dispel, duration, expires, source, stealable, personal, id = C_UnitAuras.UnitAura(unit, i, "HARMFUL|PLAYER")
-            if not name then break end
-            if not ccID or id ~= ccID then
+            local name, texture, stacks, dispel, duration, expires, source, stealable, personal, id = C_UnitAuras.UnitAuraBySlot(unit, auraSlots[i])
+            if name and (not ccID or id ~= ccID) then
                 local before = count
                 Add(name, texture, stacks, dispel, duration, expires, source, stealable, personal, id)
                 if count > before then own = own + 1 end
@@ -380,8 +382,10 @@ function NP:Shutdown()
     self.targetPlate, self.targetGUID = nil, nil
 end
 
-function NP:ApplyConfiguration()
+function NP:ApplyConfiguration(layoutOnly)
     self.active = FNP.IsEnabled(module.title, true) and FNP.OwnsNameplates()
+    module.rendering = self.active
+    FNP.RefreshRendering()
     if driver and module.listening ~= self.active then
         module.listening = self.active
         driver:UnregisterAllEvents()
@@ -408,7 +412,7 @@ function NP:ApplyConfiguration()
     for plate in pairs(lib.plates) do
         if self.active then
             self:LayoutMark(plate)
-            if plate:IsShown() then
+            if plate:IsShown() and not layoutOnly then
                 self:Queue(plate, "health"); self:Queue(plate, "auras"); self:Queue(plate, "targeting")
                 self:Combo(plate)
             end

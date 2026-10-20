@@ -47,8 +47,9 @@ local function Text(text, role, height)
     y = y - (height or 22) - 8
     return label
 end
-local function Apply()
-    NP:ApplyConfiguration()
+-- Layout-only changes skip re-querying every plate's health, auras and target.
+local function Apply(layoutOnly)
+    NP:ApplyConfiguration(layoutOnly)
     FNP.RefreshNameplateScale()
     NP:RefreshMarks()
     CD:Refresh()
@@ -72,6 +73,8 @@ local function Check(key, title, fallback, moduleTitle)
     end)
     controls[key] = button; y = y - 28
 end
+-- Aura icon size and count change which icons exist, so they re-query auras.
+local auraKeys = { nameplate_aura_size = true, nameplate_aura_count = true }
 local function Slider(key, title, minimum, maximum, step, fallback, suffix)
     y = y - 20
     local slider = CreateFrame("Slider", "FNPPlateSlider" .. key, content, "OptionsSliderTemplate")
@@ -83,7 +86,7 @@ local function Slider(key, title, minimum, maximum, step, fallback, suffix)
     slider:SetScript("OnValueChanged", function()
         local value = math.floor(slider:GetValue() / step + 0.5) * step
         label:SetText(title .. ": " .. (step < 1 and string.format("%.2f", value) or tostring(value)) .. suffix)
-        if not refreshing then FNP.SetOverride(key, value); Apply(); page:RefreshPreview() end
+        if not refreshing then FNP.SetOverride(key, value); Apply(not auraKeys[key]); page:RefreshPreview() end
     end)
     controls[key] = slider
     slider.key, slider.fallback, slider.minimum, slider.maximum = key, fallback, minimum, maximum
@@ -114,7 +117,7 @@ master:SetScript("OnClick", function()
     page:RefreshValues()
 end)
 page.master = master; y = y - 28
-Text("Restart the game after changing this switch. Off keeps Blizzard plates and your target-frame castbar. Individual feature choices are kept.", "hint", 46)
+Text("Type /reload after changing this switch. Off keeps Blizzard plates and your target-frame castbar. Individual feature choices are kept.", "hint", 46)
 local ownerNote = Text("", "hint", 32)
 Text("The feature settings below apply immediately while enabled.", "hint", 30)
 Text("Target preview (size preview capped at 2.5x)", "muted")
@@ -245,7 +248,7 @@ function page:RefreshValues()
             control:SetText(control.title .. ": " .. label)
         end
     end
-    if enabled ~= FNP.nameplatesEnabled then ownerNote:SetText("Restart the game to apply your nameplate feature choice.")
+    if enabled ~= FNP.nameplatesEnabled then ownerNote:SetText("Type /reload to apply your nameplate feature choice.")
     elseif not enabled then ownerNote:SetText("Blizzard plates are active. FostercareNameplates nameplate features are inactive.")
     elseif FNP.legacyOwner then ownerNote:SetText("Update FostercareTweaks to 1.3.0+ and restart. Its older nameplate system is still active.")
     elseif not FNP.OwnsNameplates() then ownerNote:SetText("BlizzNameplatesPlus or ShaguPlates owns the plates. These settings stay inactive.")

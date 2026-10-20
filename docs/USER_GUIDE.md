@@ -2,7 +2,7 @@
 
 Open `/fnp` to configure this addon. Settings save per character.
 
-**Use FostercareNameplates nameplate features** is the master switch. Restart the game
+**Use FostercareNameplates nameplate features** is the master switch. Type `/reload`
 after changing it. Turning it off keeps ordinary Blizzard nameplates and your
 independent target-frame castbar, and bypasses this addon's plate hooks, cast
 queries and nameplate feature events. Individual feature choices are preserved;
@@ -32,7 +32,7 @@ handlers run. The game's enemy-plate key binding still controls plate visibility
 Use a full game restart when first installing the addon so the client discovers it.
 
 The settings master switch preserves your individual choices and takes effect
-after restarting. Other module switches apply immediately while the master is on.
+after `/reload`. Other module switches apply immediately while the master is on.
 Turning off castbars or cooldown estimates removes that feature's cast listeners;
 cooldown estimates also stop their ticker. Turning off details clears its display,
 countdowns and event listeners. Turning off scaling removes its UI-scale listener.

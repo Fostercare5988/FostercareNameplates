@@ -32,7 +32,7 @@ the folder to `FostercareNameplates`. The folder must contain
 **The addon starts disabled.** Enable it in the character selection AddOns list
 when ready, then use **`/fnp`** for its settings and sample preview. Your enemy
 nameplate key binding still controls whether the game shows plates.
-The settings master switch takes effect after restarting; other feature choices
+The settings master switch takes effect after `/reload`; other feature choices
 apply live while enabled. Settings save per character.
 
 For existing FostercareTweaks users, keep both addons enabled on the first load to

@@ -25,6 +25,15 @@ libnameplate.OnRemoved = {}
 local plateRegistry = {}
 libnameplate.plates = plateRegistry
 
+-- Per-plate OnUpdate work runs only while a module that renders every frame is active.
+function FNP.RefreshRendering()
+    local rendering = false
+    for _, title in ipairs(FNP.moduleOrder) do
+        if FNP.mods[title].rendering then rendering = true end
+    end
+    libnameplate.rendering = rendering
+end
+
 function FNP.OwnsNameplates()
     return FNP.nameplatesEnabled and not libnameplate.stopping and not FNP.legacyOwner and not ShaguPlates and not BNP
 end
@@ -49,9 +58,15 @@ local function InitPlate(plate, unit)
     end
 
     FNP.HookScript(plate, "OnUpdate", function(self)
-        if not FNP.OwnsNameplates() or #libnameplate.OnUpdate == 0 then return end
-        -- Validate a pooled frame once for all render consumers, not once per feature.
-        local unit, now = FNP.GetNameplateUnit(self), GetTime()
+        if not libnameplate.rendering or not FNP.OwnsNameplates() then return end
+        -- ADDED/REMOVED own the binding; recheck a pooled frame on a slow cadence
+        -- for all render consumers instead of every frame.
+        local now = GetTime()
+        if not self.fnpNextBindCheck or now >= self.fnpNextBindCheck then
+            self.fnpNextBindCheck = now + 0.5
+            FNP.GetNameplateUnit(self)
+        end
+        local unit = self.fnpUnitGUID
         for _, callback in ipairs(libnameplate.OnUpdate) do callback(self, unit, now) end
     end)
     FNP.HookScript(plate, "OnShow", function(self)

@@ -11,6 +11,8 @@ end
 
 module.enable = function()
     active = FNP.IsEnabled(module.title) and FNP.OwnsNameplates()
+    module.rendering = active
+    FNP.RefreshRendering()
     if not initialized then
         initialized = true
         table.insert(FNP.libnameplate.OnShow, function(plate)

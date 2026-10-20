@@ -28,6 +28,8 @@ local function SyncEvents()
 end
 module.enable = function(self)
     active = FNP.IsEnabled(module.title) and FNP.OwnsNameplates()
+    module.rendering = active
+    FNP.RefreshRendering()
     for plate in pairs(FNP.libnameplate.plates) do
         if plate.fnpCastbar then
             plate.fnpCastbar.nextQuery = nil
@@ -145,7 +147,8 @@ module.enable = function(self)
                     isChannel = cast ~= nil
                 end
             end
-            cb.castUnit, cb.nextQuery = unit, now + (cast and 0.1 or 0.2)
+            -- Cast events for nameplate tokens invalidate at once; idle checks are a backstop.
+            cb.castUnit, cb.nextQuery = unit, now + (cast and 0.1 or 1)
             cb.cast, cb.castTexture, cb.startTime, cb.endTime = cast, texture, startTime, endTime
             cb.notInterruptible, cb.isChannel = notInterruptible, isChannel
         end
