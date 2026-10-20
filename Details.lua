@@ -8,7 +8,9 @@ local defaults = { nameplate_marks = 1, nameplate_raidmark_size = 20,
     nameplate_target_scale = 1.1, nameplate_other_alpha = 0.8,
     nameplate_health = 1, nameplate_health_target = 1, nameplate_own_auras = 1,
     nameplate_cc = 1, nameplate_enemy_buffs = 0, nameplate_aura_size = 20,
-    nameplate_aura_count = 3, nameplate_combo = 1, nameplate_targeting = 0 }
+    nameplate_aura_count = 3, nameplate_combo = 1, nameplate_targeting = 0,
+    nameplate_fade_critters = 0, nameplate_fade_totems = 0, nameplate_fade_pets = 0,
+    nameplate_fade_trivial = 0, nameplate_fade_neutral = 0, nameplate_fade_alpha = 0.3 }
 local module = FNP:register({ title = "Nameplate Details", category = "Nameplates", enabled = true,
     description = "Native raid marks, target emphasis, health, auras and combo points.", config = defaults })
 local NP = { pending = {}, timed = {}, settings = {} }
@@ -345,15 +347,45 @@ function NP:TargetChanged()
     if self.targetPlate then self:Select(self.targetPlate, true) end
 end
 
-local function Render(plate, unit)
+-- CreatureType.dbc rows in this client: 8 Critter, 11 Totem.
+local CRITTER, TOTEM = 8, 11
+
+-- Type, owner and level do not change while a plate keeps its unit.
+local function FixedFade(unit)
+    local s, kind = NP.settings, UnitCreatureTypeID(unit)
+    if s.fadeCritters and kind == CRITTER then return true end
+    if s.fadeTotems and kind == TOTEM then return true end
+    if s.fadePets and UnitIsOtherPlayersPet(unit) then return true end
+    -- UNVERIFIED: test in game that UnitIsTrivial marks grey-level mobs on OctoWoW.
+    if s.fadeTrivial and UnitIsTrivial(unit) then return true end
+    return false
+end
+
+local function Faded(plate, unit, now)
+    if plate.fnpFixedFade == nil then plate.fnpFixedFade = FixedFade(unit) end
+    if plate.fnpFixedFade then return true end
+    if not NP.settings.fadeNeutral then return false end
+    -- Combat state changes without a plate event; recheck it on a slow cadence.
+    if not plate.fnpFadeAt or now >= plate.fnpFadeAt then
+        plate.fnpFadeAt = now + 0.5
+        plate.fnpNeutralIdle = UnitReaction(unit, "player") == 4 and not UnitAffectingCombat(unit)
+    end
+    return plate.fnpNeutralIdle
+end
+
+local function Render(plate, unit, now)
     if not NP.active then return end
     if plate.fnpDetailGUID ~= unit then
         Clear(plate); plate.fnpDetailGUID = unit
+        plate.fnpFixedFade, plate.fnpFadeAt = nil, nil
         NP:Queue(plate, "health"); NP:Queue(plate, "auras"); NP:Queue(plate, "targeting")
     end
     local selected = unit and unit == NP.targetGUID and true or false
     if selected ~= plate.fnpIsTarget then NP:Select(plate, selected) end
     local wanted = NP.targetGUID and not selected and NP.settings.otherAlpha or 1
+    if unit and not selected and NP.settings.fade and Faded(plate, unit, now) then
+        wanted = math.min(wanted, NP.settings.fadeAlpha)
+    end
     if plate.raidicon and plate.raidicon:IsShown() then
         wanted = math.max(wanted, 0.9); NP:LayoutMark(plate)
     end
@@ -408,8 +440,16 @@ function NP:ApplyConfiguration(layoutOnly)
     s.auraCount = math.floor(FNP.GetNumber("nameplate_aura_count", 3, 1, 6))
     s.combo = FNP.GetOverride("nameplate_combo", 1) == 1
     s.targeting = FNP.GetOverride("nameplate_targeting", 0) == 1
+    s.fadeCritters = FNP.GetOverride("nameplate_fade_critters", 0) == 1
+    s.fadeTotems = FNP.GetOverride("nameplate_fade_totems", 0) == 1
+    s.fadePets = FNP.GetOverride("nameplate_fade_pets", 0) == 1
+    s.fadeTrivial = FNP.GetOverride("nameplate_fade_trivial", 0) == 1
+    s.fadeNeutral = FNP.GetOverride("nameplate_fade_neutral", 0) == 1
+    s.fade = s.fadeCritters or s.fadeTotems or s.fadePets or s.fadeTrivial or s.fadeNeutral
+    s.fadeAlpha = FNP.GetNumber("nameplate_fade_alpha", 0.3, 0.1, 0.8)
     if self.active then self:TargetChanged() end
     for plate in pairs(lib.plates) do
+        plate.fnpFixedFade, plate.fnpFadeAt = nil, nil
         if self.active then
             self:LayoutMark(plate)
             if plate:IsShown() and not layoutOnly then
