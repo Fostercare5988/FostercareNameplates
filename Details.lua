@@ -35,6 +35,9 @@ function FNP.MigrateNameplateSettings()
 end
 
 local function Visible(object, shown)
+    -- At logout the client can free a plate's child frames before Shutdown
+    -- walks them, leaving a table without methods.
+    if not object.IsShown then return end
     shown = shown and true or false
     if (object:IsShown() and true or false) ~= shown then if shown then object:Show() else object:Hide() end end
 end
