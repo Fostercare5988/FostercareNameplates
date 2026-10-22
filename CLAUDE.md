@@ -29,4 +29,5 @@ Things to know:
   scaled with the plate) and the client crashed on login (ACCESS_VIOLATION,
   2026-10-22); it was backed out. The raid mark re-anchor in Details predates it.
   To change how a native part looks, hide it by alpha and draw our own, like
-  the level (`NP:Level`, setting `nameplate_level`).
+  the level (`NP:Level`, setting `nameplate_level`; `PlaceLevel` centers it in
+  the border's oval).
