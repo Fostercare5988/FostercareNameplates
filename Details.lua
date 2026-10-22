@@ -123,7 +123,9 @@ end
 
 function NP:LayoutExtras(plate)
     FNP.SetNameplateFontSize(plate.fnpHealth, math.max(7, 9 * (plate.fnpVisualScale or 1)))
-    FNP.SetNameplateFontSize(plate.fnpLevel, math.max(7, 9 * (plate.fnpVisualScale or 1)))
+    if plate.fnpLevel then
+        FNP.SetNameplateFontSize(plate.fnpLevel, math.max(7, 9 * (plate.fnpVisualScale or 1))); PlaceLevel(plate)
+    end
     if plate.fnpTargeting then
         local anchor = plate.fnpCastbar or plate.healthbar
         if plate.fnpTargeting.fnpAnchor ~= anchor then
@@ -176,11 +178,22 @@ end
 
 -- The engine's level text and skull keep their stock size and place, so they
 -- spill off a scaled plate. Moving or re-fonting them crashed the client
--- (2026-10-22); hide them by alpha only and draw the level inside the bar.
+-- (2026-10-22); hide them by alpha only and draw our own level in the
+-- border's oval instead.
 local function NativeLevel(plate, shown)
     local alpha = shown and 1 or 0
     if plate.level and plate.level:GetAlpha() ~= alpha then plate.level:SetAlpha(alpha) end
     if plate.levelicon and plate.levelicon:GetAlpha() ~= alpha then plate.levelicon:SetAlpha(alpha) end
+end
+
+-- The oval's center lies past the bar's right end by a tenth of the bar
+-- width (measured in play, 2026-10-22), so it follows the plate size.
+local function PlaceLevel(plate)
+    local label = plate.fnpLevel
+    local x = math.floor(plate.healthbar:GetWidth() * 0.1 + 0.5)
+    if label.fnpX ~= x then
+        label.fnpX = x; label:ClearAllPoints(); label:SetPoint("CENTER", plate.healthbar, "RIGHT", x, 0)
+    end
 end
 
 function NP:Level(plate, unit)
@@ -192,9 +205,9 @@ function NP:Level(plate, unit)
     NativeLevel(plate, false)
     if not label then
         label = plate.healthbar:CreateFontString(nil, "OVERLAY")
-        label:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
-        label:SetPoint("RIGHT", plate.healthbar, "RIGHT", -2, 0); plate.fnpLevel = label
+        label:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE"); plate.fnpLevel = label
     end
+    PlaceLevel(plate)
     -- Same rules as the stock target frame: difficulty color for enemies,
     -- gold otherwise, "??" where the game shows a skull.
     local level, r, g, b = UnitLevel(unit) or 0, 1, 0.82, 0
