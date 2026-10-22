@@ -2,7 +2,7 @@
 
 Nameplate features: health and auras, cast bars, class colors, scaling, enemy
 cooldowns. Player guide: `docs/USER_GUIDE.md`. Regression tests:
-`regressions/FostercareNameplates` in VanillaForge (14 tests).
+`regressions/FostercareNameplates` in VanillaForge (17 tests).
 
 | File | Job |
 | --- | --- |
@@ -21,5 +21,8 @@ Things to know:
 
 - Work per plate per frame runs only while a module needs rendering
   (`FNP.RefreshRendering`). Keep per-frame callbacks cheap; queries are throttled.
-- At logout the client can free a plate's child frames before `Shutdown` runs;
-  `Visible` skips them.
+- At logout the client can free any part of a plate before our cleanup runs.
+  `RestorePlate` (Lifecycle.lua) does all logout work for one plate inside
+  `pcall`; keep plate-touching logout code there, not in module loops.
+- Scaling moves native parts by scaling their captured anchor offsets
+  (`fnpAnchors`); the level font scales with the plate, the name does not.
