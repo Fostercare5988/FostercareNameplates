@@ -2,7 +2,7 @@
 ## Title: |cffff9e38FostercareNameplates|r |cffffd6a8[Fostercare5988]|r
 ## Notes: Adjustable Blizzard-style nameplates. Requires ClassicAPI 1.16.0+ and SuperWoW 2.2+. NamPower 4.6.2+ enables cooldown estimates.
 ## Author: Fostercare5988
-## Version: 1.1.1
+## Version: 1.2.0
 ## X-Website: https://github.com/Fostercare5988/FostercareNameplates
 ## X-ClassicAPI-Min-Version: 1.16.0
 ## Dependencies: !!!ClassicAPI

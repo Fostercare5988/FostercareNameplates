@@ -131,6 +131,8 @@ local name = bar:CreateFontString(nil, "OVERLAY"); name:SetFont(STANDARD_TEXT_FO
 name:SetPoint("BOTTOM", bar, "TOP", 0, 3); name:SetText("Enemy player")
 local health = bar:CreateFontString(nil, "OVERLAY"); health:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
 health:SetPoint("CENTER", bar, "CENTER", 0, 0)
+local level = bar:CreateFontString(nil, "OVERLAY"); level:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
+level:SetPoint("RIGHT", bar, "RIGHT", -2, 0); level:SetText("60"); level:SetTextColor(1, 0.82, 0)
 local mark = bar:CreateTexture(nil, "OVERLAY"); mark:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
 SetRaidTargetIconTexture(mark, 8)
 local cast = CreateFrame("StatusBar", nil, preview); cast:EnableMouse(false)
@@ -173,6 +175,7 @@ Text("Turning this off restores the native position; the game still shows raid m
 Text("Health, auras and attention", "heading")
 Choice("nameplate_health", "Health text", {0, 1, 2, 3}, {"Off", "Percent", "Health", "Health + percent"}, 1)
 Check("nameplate_health_target", "Health text on target only", 1)
+Check("nameplate_level", "Level inside the health bar", 1)
 Check("nameplate_own_auras", "Your debuffs (including your pet)", 1)
 Check("nameplate_cc", "One crowd-control effect, any caster", 1)
 Check("nameplate_enemy_buffs", "Also show up to two enemy buffs", 0)
@@ -221,6 +224,7 @@ function page:RefreshPreview()
     bar:SetStatusBarColor(color.r, color.g, color.b)
     local mode = detail and FNP.GetNumber("nameplate_health", 1, 0, 3) or 0
     health:SetText(mode == 0 and "" or (mode == 1 and "72%" or (mode == 2 and "3.6k" or "3.6k  72%")))
+    if detail and FNP.GetOverride("nameplate_level", 1) == 1 then level:Show() else level:Hide() end
     local marks = detail and FNP.GetOverride("nameplate_marks", 1) == 1
     local markSize = marks and FNP.GetNumber("nameplate_raidmark_size", 20, 12, 40) / size or 20
     mark:SetWidth(markSize); mark:SetHeight(markSize); mark:ClearAllPoints()

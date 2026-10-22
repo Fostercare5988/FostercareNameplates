@@ -7,7 +7,7 @@ independently of [FostercareTweaks](https://github.com/Fostercare5988/Fostercare
 
 - Independent plate size, optional UI-scale multiplier and target enlargement.
 - Native raid target marks with adjustable size and position.
-- Optional player class colors, health text, combo points and target emphasis.
+- Optional player class colors, health text, level inside the bar, combo points and target emphasis.
 - Optional fading of critters, totems, pets, grey-level and idle neutral units.
 - Your debuffs, crowd control and optional enemy buffs with available duration data.
 - Nameplate castbars, with separate controls for size and uninterruptible casts.
