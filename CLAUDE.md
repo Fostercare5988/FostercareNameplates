@@ -2,7 +2,7 @@
 
 Nameplate features: health and auras, cast bars, class colors, scaling, enemy
 cooldowns. Player guide: `docs/USER_GUIDE.md`. Regression tests:
-`regressions/FostercareNameplates` in VanillaForge (15 tests).
+`regressions/FostercareNameplates` in VanillaForge (20 tests).
 
 | File | Job |
 | --- | --- |
@@ -28,3 +28,5 @@ Things to know:
   border, bar, dragon) from Scaling. 1.1.1 did (anchor offsets and level font
   scaled with the plate) and the client crashed on login (ACCESS_VIOLATION,
   2026-10-22); it was backed out. The raid mark re-anchor in Details predates it.
+  To change how a native part looks, hide it by alpha and draw our own, like
+  the level (`NP:Level`, setting `nameplate_level`).

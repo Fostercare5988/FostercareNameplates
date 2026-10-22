@@ -97,7 +97,7 @@ end
 -- Engine-created plates can outlive the Lua UI. Unlink only our regions/frames
 -- before reload frees their font/layout resources, then restore native layout.
 local function RestorePlate(plate)
-    for _, key in ipairs({ "fnpHealth",
+    for _, key in ipairs({ "fnpHealth", "fnpLevel",
         "fnpAuras", "fnpCombo", "fnpTargetGlow", "fnpTargeting",
         "fnpCastbar", "fnpEnemyCooldowns" }) do
         local object = plate[key]

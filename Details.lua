@@ -6,7 +6,7 @@ if not FNP then return end
 local defaults = { nameplate_marks = 1, nameplate_raidmark_size = 20,
     nameplate_raidmark_position = "left", nameplate_target_glow = 0,
     nameplate_target_scale = 1.1, nameplate_other_alpha = 0.8,
-    nameplate_health = 1, nameplate_health_target = 1, nameplate_own_auras = 1,
+    nameplate_health = 1, nameplate_health_target = 1, nameplate_level = 1, nameplate_own_auras = 1,
     nameplate_cc = 1, nameplate_enemy_buffs = 0, nameplate_aura_size = 20,
     nameplate_aura_count = 3, nameplate_combo = 1, nameplate_targeting = 0,
     nameplate_fade_critters = 0, nameplate_fade_totems = 0, nameplate_fade_pets = 0,
@@ -19,7 +19,7 @@ local lib = FNP.libnameplate
 local ticker, queued, driver
 local auraSlots = {}
 local DETAIL_EVENTS = { "PLAYER_TARGET_CHANGED", "PLAYER_COMBO_POINTS", "UNIT_HEALTH", "UNIT_MAXHEALTH",
-    "UNIT_AURA", "UNIT_TARGET", "UNIT_FACTION", "RAID_TARGET_UPDATE", "PLAYER_ENTERING_WORLD", "ADDON_LOADED" }
+    "UNIT_AURA", "UNIT_TARGET", "UNIT_FACTION", "UNIT_LEVEL", "RAID_TARGET_UPDATE", "PLAYER_ENTERING_WORLD", "ADDON_LOADED" }
 
 function FNP.MigrateNameplateSettings()
     local cfg = FostercareNameplates_Config
@@ -63,6 +63,7 @@ local function Clear(plate)
     NP.pending[plate] = nil
     HideAuras(plate)
     if plate.fnpHealth then Visible(plate.fnpHealth, false) end
+    if plate.fnpLevel then Visible(plate.fnpLevel, false) end
     if plate.fnpCombo then Visible(plate.fnpCombo, false) end
     if plate.fnpTargetGlow then Visible(plate.fnpTargetGlow, false) end
     if plate.fnpTargeting then Visible(plate.fnpTargeting, false) end
@@ -122,6 +123,7 @@ end
 
 function NP:LayoutExtras(plate)
     FNP.SetNameplateFontSize(plate.fnpHealth, math.max(7, 9 * (plate.fnpVisualScale or 1)))
+    FNP.SetNameplateFontSize(plate.fnpLevel, math.max(7, 9 * (plate.fnpVisualScale or 1)))
     if plate.fnpTargeting then
         local anchor = plate.fnpCastbar or plate.healthbar
         if plate.fnpTargeting.fnpAnchor ~= anchor then
@@ -168,6 +170,42 @@ function NP:Health(plate, unit)
     local percent = math.floor(math.max(0, math.min(1, hp / maximum)) * 100 + 0.5) .. "%"
     local mode = self.settings.health
     Text(label, mode == 1 and percent or (mode == 2 and FormatHP(hp) or FormatHP(hp) .. "  " .. percent))
+    FNP.SetNameplateFontSize(label, math.max(7, 9 * (plate.fnpVisualScale or 1)))
+    Visible(label, true)
+end
+
+-- The engine's level text and skull keep their stock size and place, so they
+-- spill off a scaled plate. Moving or re-fonting them crashed the client
+-- (2026-10-22); hide them by alpha only and draw the level inside the bar.
+local function NativeLevel(plate, shown)
+    local alpha = shown and 1 or 0
+    if plate.level and plate.level:GetAlpha() ~= alpha then plate.level:SetAlpha(alpha) end
+    if plate.levelicon and plate.levelicon:GetAlpha() ~= alpha then plate.levelicon:SetAlpha(alpha) end
+end
+
+function NP:Level(plate, unit)
+    local label = plate.fnpLevel
+    if not self.settings.level or not unit then
+        if label then Visible(label, false) end
+        NativeLevel(plate, true); return
+    end
+    NativeLevel(plate, false)
+    if not label then
+        label = plate.healthbar:CreateFontString(nil, "OVERLAY")
+        label:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
+        label:SetPoint("RIGHT", plate.healthbar, "RIGHT", -2, 0); plate.fnpLevel = label
+    end
+    -- Same rules as the stock target frame: difficulty color for enemies,
+    -- gold otherwise, "??" where the game shows a skull.
+    local level, r, g, b = UnitLevel(unit) or 0, 1, 0.82, 0
+    if level <= 0 then r, g, b = 1, 0.1, 0.1
+    elseif UnitCanAttack("player", unit) then
+        local color = GetDifficultyColor(level); r, g, b = color.r, color.g, color.b
+    end
+    Text(label, level > 0 and level or "??")
+    if label.fnpR ~= r or label.fnpG ~= g or label.fnpB ~= b then
+        label.fnpR, label.fnpG, label.fnpB = r, g, b; label:SetTextColor(r, g, b)
+    end
     FNP.SetNameplateFontSize(label, math.max(7, 9 * (plate.fnpVisualScale or 1)))
     Visible(label, true)
 end
@@ -313,6 +351,7 @@ local function Flush()
         if unit then
             plate.fnpNeedsDetails = nil
             if flags.health then NP:Health(plate, unit) end
+            if flags.level then NP:Level(plate, unit) end
             if flags.auras then NP:Auras(plate, unit) end
             if flags.targeting then NP:Targeting(plate, unit) end
         else Clear(plate) end
@@ -378,7 +417,7 @@ local function Render(plate, unit, now)
     if plate.fnpDetailGUID ~= unit then
         Clear(plate); plate.fnpDetailGUID = unit
         plate.fnpFixedFade, plate.fnpFadeAt = nil, nil
-        NP:Queue(plate, "health"); NP:Queue(plate, "auras"); NP:Queue(plate, "targeting")
+        NP:Queue(plate, "health"); NP:Queue(plate, "level"); NP:Queue(plate, "auras"); NP:Queue(plate, "targeting")
     end
     local selected = unit and unit == NP.targetGUID and true or false
     if selected ~= plate.fnpIsTarget then NP:Select(plate, selected) end
@@ -413,7 +452,7 @@ end
 
 -- Logout/reload: give one engine plate its stock mark and opacity back.
 function NP:RestorePlate(plate)
-    self:LayoutMark(plate, true)
+    self:LayoutMark(plate, true); NativeLevel(plate, true)
     if plate:GetAlpha() ~= 1 then plate:SetAlpha(1) end
 end
 
@@ -436,6 +475,7 @@ function NP:ApplyConfiguration(layoutOnly)
     s.otherAlpha = FNP.GetNumber("nameplate_other_alpha", 0.8, 0.2, 1)
     s.health = math.floor(FNP.GetNumber("nameplate_health", 1, 0, 3))
     s.healthTarget = FNP.GetOverride("nameplate_health_target", 1) == 1
+    s.level = FNP.GetOverride("nameplate_level", 1) == 1
     s.own = FNP.GetOverride("nameplate_own_auras", 1) == 1
     s.cc = FNP.GetOverride("nameplate_cc", 1) == 1
     s.buffs = FNP.GetOverride("nameplate_enemy_buffs", 0) == 1
@@ -455,13 +495,14 @@ function NP:ApplyConfiguration(layoutOnly)
         plate.fnpFixedFade, plate.fnpFadeAt = nil, nil
         if self.active then
             self:LayoutMark(plate)
+            if not s.level then NativeLevel(plate, true) end
             if plate:IsShown() and not layoutOnly then
-                self:Queue(plate, "health"); self:Queue(plate, "auras"); self:Queue(plate, "targeting")
+                self:Queue(plate, "health"); self:Queue(plate, "level"); self:Queue(plate, "auras"); self:Queue(plate, "targeting")
                 self:Combo(plate)
             end
         else
             plate.fnpIsTarget = false
-            Clear(plate); self:LayoutMark(plate, true)
+            Clear(plate); self:LayoutMark(plate, true); NativeLevel(plate, true)
             if FNP.OwnsNameplates() then plate:SetAlpha(1) end
             if not FNP.OwnsNameplates() and FNP.RestoreNameplateScale then FNP.RestoreNameplateScale(plate) end
         end
@@ -487,7 +528,7 @@ module.enable = function(self)
             elseif ev == "RAID_TARGET_UPDATE" then NP:RefreshMarks()
             elseif ev == "PLAYER_ENTERING_WORLD" then
                 for plate in pairs(lib.plates) do
-                    Clear(plate); NP:Queue(plate, "health"); NP:Queue(plate, "auras"); NP:Queue(plate, "targeting")
+                    Clear(plate); NP:Queue(plate, "health"); NP:Queue(plate, "level"); NP:Queue(plate, "auras"); NP:Queue(plate, "targeting")
                 end
                 NP:TargetChanged()
             elseif unit then
@@ -496,8 +537,9 @@ module.enable = function(self)
                     if plate and lib.plates[plate] then NP:Queue(plate, "auras"); NP:Queue(plate, "targeting") end
                     return
                 end
-                local kind = ev == "UNIT_AURA" and "auras" or (ev == "UNIT_TARGET" and "targeting" or "health")
-                if (kind == "auras" and not NP.settings.own and not NP.settings.cc and not NP.settings.buffs)
+                local kind = ev == "UNIT_AURA" and "auras" or (ev == "UNIT_TARGET" and "targeting"
+                    or (ev == "UNIT_LEVEL" and "level" or "health"))
+                if (kind == "level" and not NP.settings.level) or (kind == "auras" and not NP.settings.own and not NP.settings.cc and not NP.settings.buffs)
                     or (kind == "targeting" and not NP.settings.targeting) or (kind == "health" and NP.settings.health == 0) then return end
                 local plate = C_NamePlate.GetNamePlateForUnit(unit)
                 if plate and lib.plates[plate] then
@@ -509,7 +551,7 @@ module.enable = function(self)
         table.insert(lib.OnAdded, function(plate, unit)
             if not NP.active then return end
             Clear(plate); plate.fnpDetailGUID = unit; NP:Select(plate, unit and unit == NP.targetGUID and true or false)
-            NP:Queue(plate, "auras"); NP:Queue(plate, "targeting")
+            NP:Queue(plate, "level"); NP:Queue(plate, "auras"); NP:Queue(plate, "targeting")
         end)
         local function Removed(plate)
             Clear(plate); plate.fnpDetailGUID = nil
@@ -523,7 +565,7 @@ module.enable = function(self)
             if NP.active then
                 NP:LayoutMark(plate)
                 if plate.fnpNeedsDetails or not plate.fnpDetailGUID then
-                    NP:Queue(plate, "health"); NP:Queue(plate, "auras"); NP:Queue(plate, "targeting")
+                    NP:Queue(plate, "health"); NP:Queue(plate, "level"); NP:Queue(plate, "auras"); NP:Queue(plate, "targeting")
                 end
             end
         end)
