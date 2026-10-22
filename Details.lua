@@ -113,6 +113,16 @@ function NP:RefreshMarks()
     end
 end
 
+-- The level oval's center lies past the bar's right end by a tenth of the bar
+-- width (measured in play, 2026-10-22), so it follows the plate size.
+local function PlaceLevel(plate)
+    local label = plate.fnpLevel
+    local x = math.floor(plate.healthbar:GetWidth() * 0.1 + 0.5)
+    if label.fnpX ~= x then
+        label.fnpX = x; label:ClearAllPoints(); label:SetPoint("CENTER", plate.healthbar, "RIGHT", x, 0)
+    end
+end
+
 function NP:TopSpace(plate)
     local space = 6
     if self.settings.marks and self.settings.markPosition == "above" then space = space + self.settings.markSize + 4 end
@@ -184,16 +194,6 @@ local function NativeLevel(plate, shown)
     local alpha = shown and 1 or 0
     if plate.level and plate.level:GetAlpha() ~= alpha then plate.level:SetAlpha(alpha) end
     if plate.levelicon and plate.levelicon:GetAlpha() ~= alpha then plate.levelicon:SetAlpha(alpha) end
-end
-
--- The oval's center lies past the bar's right end by a tenth of the bar
--- width (measured in play, 2026-10-22), so it follows the plate size.
-local function PlaceLevel(plate)
-    local label = plate.fnpLevel
-    local x = math.floor(plate.healthbar:GetWidth() * 0.1 + 0.5)
-    if label.fnpX ~= x then
-        label.fnpX = x; label:ClearAllPoints(); label:SetPoint("CENTER", plate.healthbar, "RIGHT", x, 0)
-    end
 end
 
 function NP:Level(plate, unit)
