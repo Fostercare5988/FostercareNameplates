@@ -1,52 +1,25 @@
 local FNP = FostercareNameplates
 if not FNP then return end
-local settings = CreateFrame("Frame", "FostercareNameplatesSettingsGUI", UIParent)
-settings:Hide()
-table.insert(UISpecialFrames, "FostercareNameplatesSettingsGUI")
-settings:SetPoint("CENTER", UIParent, "CENTER", 0, 20)
-settings:SetWidth(540)
-settings:SetFrameStrata("DIALOG")
-settings:SetMovable(true)
-settings:SetClampedToScreen(true)
-settings:EnableMouse(true)
-settings:RegisterForDrag("LeftButton")
-settings:SetScript("OnDragStart", function() this:StartMoving() end)
-settings:SetScript("OnDragStop", function() this:StopMovingOrSizing() end)
-FNP.SettingsTheme.Panel(settings, "background")
-local title = FNP.SettingsTheme.Font(settings, "OVERLAY", "GameFontNormalLarge", "accent")
-title:SetPoint("TOP", settings, "TOP", 0, -12)
-title:SetText("FostercareNameplates")
-local close = CreateFrame("Button", "FNPSettingsClose", settings, "UIPanelCloseButton")
-close:SetPoint("TOPRIGHT", settings, "TOPRIGHT", -6, -6)
-close:SetScript("OnClick", function() settings:Hide() end)
-local done = CreateFrame("Button", "FNPSettingsDone", settings, "UIPanelButtonTemplate")
-done:SetPoint("BOTTOMRIGHT", settings, "BOTTOMRIGHT", -16, 14)
-done:SetWidth(96); done:SetHeight(24); done:SetText(CLOSE)
-FNP.SettingsTheme.Button(done)
-done:SetScript("OnClick", function() settings:Hide() end)
-local function Resize()
-    settings:SetHeight(math.min(600, math.max(240, UIParent:GetHeight() - 40)))
-end
-settings:RegisterEvent("UI_SCALE_CHANGED")
-FNP.SetEventHandler(settings, Resize)
-Resize()
+local _, ns = ...
+local UI = ns.UI
+local CD, NP = FNP.NameplateCooldowns, FNP.Nameplates
 
-local Theme, CD, NP = FNP.SettingsTheme, FNP.NameplateCooldowns, FNP.Nameplates
-local page = CreateFrame("ScrollFrame", "FNPNameplateSettingsPage", settings, "UIPanelScrollFrameTemplate")
-page:SetPoint("TOPLEFT", settings, "TOPLEFT", 14, -42)
-page:SetPoint("BOTTOMRIGHT", settings, "BOTTOMRIGHT", -34, 48)
-settings.nameplatePage = page
-local content = CreateFrame("Frame", "FNPNameplateSettingsContent", page)
-content:SetWidth(492); page:SetScrollChild(content); Theme.Panel(content)
-local controls, refreshing, y = {}, nil, -14
-page.controls = controls
-local function Text(text, role, height)
-    local label = Theme.Font(content, "OVERLAY", "GameFontNormalSmall", role)
-    label:SetPoint("TOPLEFT", content, "TOPLEFT", 18, y)
-    label:SetWidth(448); label:SetHeight(height or 22); label:SetJustifyH("LEFT"); label:SetText(text)
-    y = y - (height or 22) - 8
-    return label
+-- ForgeUI layout (VanillaForge templates/ForgeUI): columns at 28 and 264, and a
+-- live plate preview at the top of the right column on every tab.
+local LEFT, RIGHT, SIDE = 28, 264, 208
+local panel = UI.Window("FostercareNameplatesSettingsGUI", "FostercareNameplates", 500, 440,
+    GetAddOnMetadata("FostercareNameplates", "Version"))
+
+-- Each control adds a sync that shows its saved value and dims it while it
+-- cannot take effect. options maps every reset-able key to its default.
+local syncs, options = {}, {}
+local RefreshPreview
+
+local function Refresh()
+    for _, sync in ipairs(syncs) do sync() end
+    RefreshPreview()
 end
+
 -- Layout-only changes skip re-querying every plate's health, auras and target.
 local function Apply(layoutOnly)
     NP:ApplyConfiguration(layoutOnly)
@@ -54,219 +27,254 @@ local function Apply(layoutOnly)
     NP:RefreshMarks()
     CD:Refresh()
 end
-local function Check(key, title, fallback, moduleTitle)
-    local button = CreateFrame("CheckButton", "FNPPlateCheck" .. string.gsub(key, "%W", "_"), content, "OptionsCheckButtonTemplate")
-    button:SetWidth(24); button:SetHeight(24); button:SetPoint("TOPLEFT", content, "TOPLEFT", 16, y)
-    Theme.CheckButton(button)
-    local label = _G[button:GetName() .. "Text"]
-    label:SetText(title); label:SetFontObject("GameFontNormalSmall"); Theme.Text(label)
-    button.fallback, button.moduleTitle, button.checkKey = fallback, moduleTitle, key
-    button:SetScript("OnClick", function()
-        if refreshing then return end
-        local value = button:GetChecked() and 1 or 0
-        if moduleTitle then
-            FostercareNameplates_Config[moduleTitle] = value
-            local mod = FNP.mods[moduleTitle]
-            if FNP.nameplatesEnabled and mod and mod.enable then mod:enable() end
-        else FNP.SetOverride(key, value) end
-        Apply(); page:RefreshValues()
+
+local function Live() return FNP.OwnsNameplates() end
+local function Module(title) return function() return Live() and FNP.IsEnabled(title) end end
+local Details, Scale, Castbars = Module("Nameplate Details"), Module("Nameplate Scale"), Module("Nameplate Castbar")
+local function Cooldowns() return Live() and FNP.IsEnabled("Enemy Nameplate Cooldowns") and CD:IsAvailable() end
+local function On(key, fallback) return FNP.GetOverride(key, fallback) == 1 end
+local function Both(a, b) return function() return a() and b() end end
+local function Set(key, fallback) return function() return On(key, fallback) end end
+
+local function Times(value) return string.format("%.2fx", value) end
+local function Percent(value) return math.floor(value * 100 + 0.5) .. "%" end
+local function Pixels(value) return value .. " px" end
+local function Seconds(value) return value .. " s" end
+
+-- A switch for one feature module (its own saved key, not an override).
+local function Feature(page, title, text, tip, y)
+    local widget = UI.Switch("FNPOpt_" .. string.gsub(title, " ", ""), page, text, tip, LEFT, y, function(value)
+        FostercareNameplates_Config[title] = value and 1 or 0
+        local mod = FNP.mods[title]
+        if FNP.nameplatesEnabled and mod and mod.enable then mod:enable() end
+        Apply(); Refresh()
     end)
-    controls[key] = button; y = y - 28
-end
--- Aura icon size and count change which icons exist, so they re-query auras.
-local auraKeys = { nameplate_aura_size = true, nameplate_aura_count = true }
-local function Slider(key, title, minimum, maximum, step, fallback, suffix)
-    y = y - 20
-    local slider = CreateFrame("Slider", "FNPPlateSlider" .. key, content, "OptionsSliderTemplate")
-    slider:SetWidth(432); slider:SetHeight(16); slider:SetPoint("TOPLEFT", content, "TOPLEFT", 26, y)
-    slider:SetMinMaxValues(minimum, maximum); slider:SetValueStep(step); Theme.Slider(slider)
-    local name, label = slider:GetName(), _G[slider:GetName() .. "Text"]
-    Theme.Text(label); Theme.Text(_G[name .. "Low"], "muted"); Theme.Text(_G[name .. "High"], "muted")
-    _G[name .. "Low"]:SetText(minimum .. suffix); _G[name .. "High"]:SetText(maximum .. suffix)
-    slider:SetScript("OnValueChanged", function()
-        local value = math.floor(slider:GetValue() / step + 0.5) * step
-        label:SetText(title .. ": " .. (step < 1 and string.format("%.2f", value) or tostring(value)) .. suffix)
-        if not refreshing then FNP.SetOverride(key, value); Apply(not auraKeys[key]); page:RefreshPreview() end
-    end)
-    controls[key] = slider
-    slider.key, slider.fallback, slider.minimum, slider.maximum = key, fallback, minimum, maximum
-    y = y - 36
-end
-local function Choice(key, title, values, labels, fallback)
-    local button = CreateFrame("Button", "FNPPlateChoice" .. key, content, "UIPanelButtonTemplate")
-    button:SetWidth(286); button:SetHeight(24); button:SetPoint("TOPLEFT", content, "TOPLEFT", 18, y)
-    Theme.Button(button)
-    button.choiceKey, button.fallback, button.values, button.labels, button.title = key, fallback, values, labels, title
-    button:SetScript("OnClick", function()
-        local value, index = FNP.GetOverride(key, fallback), 0
-        for i, candidate in ipairs(values) do if candidate == value then index = i end end
-        FNP.SetOverride(key, values[index % #values + 1]); Apply(); page:RefreshValues()
-    end)
-    controls[key] = button; y = y - 34
+    table.insert(syncs, function() UI.Sync(widget, FNP.IsEnabled(title), Live()) end)
 end
 
-Text("Nameplates", "heading")
-local master = CreateFrame("CheckButton", "FNPNameplatesEnabled", content, "OptionsCheckButtonTemplate")
-master:SetWidth(24); master:SetHeight(24); master:SetPoint("TOPLEFT", content, "TOPLEFT", 16, y)
-Theme.CheckButton(master)
-local masterLabel = _G[master:GetName() .. "Text"]
-masterLabel:SetText("Use FostercareNameplates nameplate features")
-masterLabel:SetFontObject("GameFontNormalSmall"); Theme.Text(masterLabel)
-master:SetScript("OnClick", function()
-    FostercareNameplates_Config.nameplatesEnabled = master:GetChecked() and 1 or 0
-    page:RefreshValues()
+local function Option(page, key, fallback, text, tip, x, y, needs)
+    options[key] = fallback
+    local widget = UI.Switch("FNPOpt_" .. key, page, text, tip, x, y, function(value)
+        FNP.SetOverride(key, value and 1 or 0); Apply(); Refresh()
+    end, x == RIGHT and 172 or nil)
+    table.insert(syncs, function() UI.Sync(widget, On(key, fallback), needs()) end)
+end
+
+-- Aura icon size and count change which icons exist, so they re-query auras.
+local auraKeys = { nameplate_aura_size = true, nameplate_aura_count = true }
+
+local function Slider(page, key, fallback, minimum, maximum, step, text, x, y, needs, format)
+    options[key] = fallback
+    local slider = UI.Slider("FNPOpt_" .. key, page, text, x, y, SIDE, minimum, maximum, step, function(value)
+        FNP.SetOverride(key, value); Apply(not auraKeys[key]); RefreshPreview()
+    end, format)
+    table.insert(syncs, function()
+        UI.SetSlider(slider, FNP.GetNumber(key, fallback, minimum, maximum))
+        local on = needs() and true or false
+        local alpha = on and 1 or 0.4
+        slider:EnableMouse(on); slider:SetAlpha(alpha)
+        slider.label:SetAlpha(alpha); slider.valueText:SetAlpha(alpha)
+    end)
+end
+
+local function Choice(page, key, fallback, values, labels, x, y, needs)
+    options[key] = fallback
+    local buttons, Select, track = UI.Segmented("FNPOpt_" .. key, page, labels, x, y, SIDE, function(index)
+        FNP.SetOverride(key, values[index]); Apply(); Refresh()
+    end, { height = 24 })
+    table.insert(syncs, function()
+        local value, chosen = FNP.GetOverride(key, fallback), 1
+        for i, candidate in ipairs(values) do if candidate == value then chosen = i end end
+        Select(chosen)
+        local on = needs() and true or false
+        track:SetAlpha(on and 1 or 0.4)
+        for _, button in ipairs(buttons) do if on then button:Enable() else button:Disable() end end
+    end)
+end
+
+local function Hint(page, text, x, y, width)
+    local label = UI.Label(page, text, x, y, "GameFontDisableSmall")
+    label:SetWidth(width or SIDE)
+    return label
+end
+
+local tab = 1
+local pages, ShowTab = UI.Tabs(panel, "FNPOpt", {
+    { label = "General", height = 440 },
+    { label = "Text & auras", height = 470 },
+    { label = "Target", height = 466 },
+    { label = "Casts", height = 420 },
+}, function(index) tab = index; Refresh() end)
+panel:SetScript("OnShow", function() ShowTab(tab) end)
+
+-- General -------------------------------------------------------------------
+local general = pages[1]
+UI.Heading(general, "Nameplates", LEFT, -98)
+local master = UI.Switch("FNPOpt_Master", general, "Use FostercareNameplates",
+    "Off keeps Blizzard plates and your target-frame castbar. Takes effect after /reload.", LEFT, -118,
+    function(value)
+        FostercareNameplates_Config.nameplatesEnabled = value and 1 or 0
+        Refresh()
+    end)
+UI.Heading(general, "Features", LEFT, -160)
+Feature(general, "Nameplate Scale", "Resize plates", "Plate and castbar size.", -180)
+Feature(general, "Nameplate Details", "Target, text, auras and marks",
+    "Target emphasis, health and level text, auras, combo points, raid marks and fading.", -206)
+Feature(general, "Nameplate Class Colors", "Class colors for players", "Color enemy and friendly player bars by class.", -232)
+Feature(general, "Nameplate Castbar", "Enemy castbars", "A castbar under each casting enemy.", -258)
+Feature(general, "Enemy Nameplate Cooldowns", "Enemy cooldowns",
+    "Icons for cooldowns seen used by enemy players. Needs NamPower 4.6.2+.", -284)
+UI.Heading(general, "Size", RIGHT, -258)
+Slider(general, "nameplate_scale", 1, 0.1, 4, 0.05, "Plate size", RIGHT, -278, Scale, Times)
+Option(general, "nameplate_follow_ui", 0, "Follow UI scale", "Multiply plate size by the game's UI scale.",
+    RIGHT, -322, Scale)
+local status = Hint(general, "", LEFT, -362, 444)
+local reset = UI.Button("FNPOpt_Reset", general, "Reset settings", 0, 0, 172, function()
+    for key, fallback in pairs(options) do FNP.SetOverride(key, fallback) end
+    Apply(); Refresh()
 end)
-page.master = master; y = y - 28
-Text("Type /reload after changing this switch. Off keeps Blizzard plates and your target-frame castbar. Individual feature choices are kept.", "hint", 46)
-local ownerNote = Text("", "hint", 32)
-Text("The feature settings below apply immediately while enabled.", "hint", 30)
-Text("Target preview (size preview capped at 2.5x)", "muted")
-local preview = CreateFrame("Frame", nil, content); preview:EnableMouse(false)
-preview:SetWidth(110); preview:SetHeight(14); preview:SetPoint("TOP", content, "TOP", 0, y - 110)
+reset:ClearAllPoints(); reset:SetPoint("BOTTOMLEFT", general, "BOTTOMLEFT", LEFT, 18)
+UI.Tooltip(reset, "Restore every option to its default. Feature switches stay as they are.")
+table.insert(syncs, function()
+    local enabled = FostercareNameplates_Config.nameplatesEnabled ~= 0
+    UI.Sync(master, enabled)
+    local text = ""
+    if enabled ~= FNP.nameplatesEnabled then text = "Type /reload to apply."
+    elseif not enabled then text = "Off: Blizzard plates are in use."
+    elseif FNP.legacyOwner then text = "Update FostercareTweaks to 1.3.0+ and restart."
+    elseif not Live() then text = "BlizzNameplatesPlus or ShaguPlates owns the plates."
+    elseif not CD:IsAvailable() then text = "Enemy cooldowns need NamPower 4.6.2+." end
+    status:SetText(text)
+end)
+
+-- Text & auras ----------------------------------------------------------------
+local words = pages[2]
+UI.Heading(words, "Health text", LEFT, -98)
+Choice(words, "nameplate_health", 1, { 0, 1, 2, 3 }, { "Off", "%", "Value", "Both" }, LEFT, -118, Details)
+Option(words, "nameplate_health_target", 1, "Only on your target", nil, LEFT, -152,
+    function() return Details() and FNP.GetNumber("nameplate_health", 1, 0, 3) > 0 end)
+UI.Heading(words, "On the plate", LEFT, -192)
+Option(words, "nameplate_level", 1, "Level in the level slot",
+    "Sized with the plate and colored by difficulty. Off shows the game's own level.", LEFT, -212, Details)
+Option(words, "nameplate_combo", 1, "Combo points on your target", nil, LEFT, -238, Details)
+Option(words, "nameplate_targeting", 0, "Label enemies targeting you", nil, LEFT, -264, Details)
+UI.Heading(words, "Raid marks", LEFT, -304)
+Option(words, "nameplate_marks", 1, "Move raid marks", "Off leaves marks where the game puts them.", LEFT, -324, Details)
+local marks = Both(Details, Set("nameplate_marks", 1))
+Slider(words, "nameplate_raidmark_size", 20, 12, 40, 1, "Mark size", LEFT, -356, marks, Pixels)
+Choice(words, "nameplate_raidmark_position", "left", { "left", "above", "right" }, { "Left", "Above", "Right" },
+    LEFT, -400, marks)
+UI.Heading(words, "Auras", RIGHT, -258)
+Option(words, "nameplate_own_auras", 1, "Your debuffs", "Including your pet's.", RIGHT, -278, Details)
+Option(words, "nameplate_cc", 1, "Crowd control", "One crowd-control effect from any caster.", RIGHT, -304, Details)
+Option(words, "nameplate_enemy_buffs", 0, "Enemy buffs", "Up to two buffs on enemies.", RIGHT, -330, Details)
+Slider(words, "nameplate_aura_count", 3, 1, 6, 1, "Most debuffs", RIGHT, -360,
+    Both(Details, Set("nameplate_own_auras", 1)))
+Slider(words, "nameplate_aura_size", 20, 14, 32, 1, "Icon size", RIGHT, -402, function()
+    return Details() and (On("nameplate_own_auras", 1) or On("nameplate_cc", 1) or On("nameplate_enemy_buffs", 0))
+end, Pixels)
+
+-- Target ----------------------------------------------------------------------
+local target = pages[3]
+UI.Heading(target, "Your target", LEFT, -98)
+Option(target, "nameplate_target_glow", 0, "Warm glow", nil, LEFT, -118, Details)
+Slider(target, "nameplate_target_scale", 1.1, 1, 1.5, 0.05, "Target size", LEFT, -150, Both(Details, Scale), Times)
+Slider(target, "nameplate_other_alpha", 0.8, 0.2, 1, 0.05, "Other plates", LEFT, -192, Details, Percent)
+UI.Heading(target, "Fade", LEFT, -244)
+Option(target, "nameplate_fade_critters", 0, "Critters", nil, LEFT, -264, Details)
+Option(target, "nameplate_fade_totems", 0, "Totems", nil, LEFT, -290, Details)
+Option(target, "nameplate_fade_pets", 0, "Pets and guardians", "Other players' pets, guardians and totems.", LEFT, -316, Details)
+Option(target, "nameplate_fade_trivial", 0, "Grey-level enemies", nil, LEFT, -342, Details)
+Option(target, "nameplate_fade_neutral", 0, "Idle neutral units", "Neutral units not in combat.", LEFT, -368, Details)
+Slider(target, "nameplate_fade_alpha", 0.3, 0.1, 0.8, 0.05, "Faded plates", LEFT, -400, function()
+    return Details() and (On("nameplate_fade_critters", 0) or On("nameplate_fade_totems", 0) or On("nameplate_fade_pets", 0)
+        or On("nameplate_fade_trivial", 0) or On("nameplate_fade_neutral", 0))
+end, Percent)
+Hint(target, "Your target and marked units never fade. Faded plates stay clickable.", RIGHT, -258)
+
+-- Casts -----------------------------------------------------------------------
+local casts = pages[4]
+UI.Heading(casts, "Castbars", LEFT, -98)
+Option(casts, "nameplate_uninterruptible", 1, "Grey when uninterruptible", nil, LEFT, -118, Castbars)
+Slider(casts, "nameplate_cast_height", 10, 6, 18, 1, "Height", LEFT, -150, Castbars, Pixels)
+Slider(casts, "nameplate_cast_gap", 3, 0, 16, 1, "Gap below bar", LEFT, -192, Castbars, Pixels)
+UI.Heading(casts, "Enemy cooldowns", LEFT, -244)
+Option(casts, "nameplate_cd_target", 0, "Only on your target", nil, LEFT, -264, Cooldowns)
+Slider(casts, "nameplate_cd_size", 22, 14, 40, 1, "Icon size", LEFT, -296, Cooldowns, Pixels)
+Slider(casts, "nameplate_cd_count", 5, 1, 8, 1, "Most icons", LEFT, -338, Cooldowns)
+Slider(casts, "nameplate_cd_minimum", 5, 5, 120, 1, "Shortest cooldown", RIGHT, -258, Cooldowns, Seconds)
+Slider(casts, "nameplate_cd_offset", 8, 0, 60, 1, "Space above auras", RIGHT, -300, Cooldowns, Pixels)
+Hint(casts, "Seen enemy players only. ~ marks an estimate: talents and resets can change it.", RIGHT, -342)
+
+-- Preview -----------------------------------------------------------------------
+-- A sample enemy on every tab; sizes follow the settings, capped to fit.
+UI.Heading(panel, "Preview", RIGHT, -98)
+local box = CreateFrame("Frame", nil, panel); box:EnableMouse(false)
+box:SetWidth(SIDE); box:SetHeight(130); box:SetPoint("TOPLEFT", panel, "TOPLEFT", RIGHT, -116)
+UI.Rounded(box, "BACKGROUND", 10, UI.track)
+local preview = CreateFrame("Frame", nil, box); preview:EnableMouse(false)
+preview:SetWidth(110); preview:SetHeight(14); preview:SetPoint("CENTER", box, "CENTER", -8, -16)
 local bar = CreateFrame("StatusBar", nil, preview); bar:EnableMouse(false); bar:SetAllPoints(preview)
 bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar"); bar:SetMinMaxValues(0, 100); bar:SetValue(72)
-local border = bar:CreateTexture(nil, "OVERLAY"); border:SetTexture("Interface\\Tooltips\\Nameplate-Border")
+local border = bar:CreateTexture(nil, "ARTWORK"); border:SetTexture("Interface\\Tooltips\\Nameplate-Border")
 border:SetPoint("CENTER", bar, "CENTER", 0, 0); border:SetWidth(128); border:SetHeight(16)
-local name = bar:CreateFontString(nil, "OVERLAY"); name:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
+local glow = bar:CreateTexture(nil, "BORDER")
+glow:SetTexture("Interface\\Tooltips\\Nameplate-Glow"); glow:SetAllPoints(border)
+glow:SetBlendMode("ADD"); glow:SetVertexColor(1, 0.8, 0.3, 0.7)
+local top = CreateFrame("Frame", nil, bar); top:SetAllPoints(bar)
+local name = top:CreateFontString(nil, "OVERLAY"); name:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
 name:SetPoint("BOTTOM", bar, "TOP", 0, 3); name:SetText("Enemy player")
-local health = bar:CreateFontString(nil, "OVERLAY"); health:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
+local health = top:CreateFontString(nil, "OVERLAY"); health:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
 health:SetPoint("CENTER", bar, "CENTER", 0, 0)
-local level = bar:CreateFontString(nil, "OVERLAY"); level:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
-level:SetPoint("LEFT", bar, "RIGHT", 3, 0); level:SetText("60"); level:SetTextColor(1, 0.82, 0)
-local mark = bar:CreateTexture(nil, "OVERLAY"); mark:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
+local level = top:CreateFontString(nil, "OVERLAY"); level:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
+level:SetPoint("CENTER", bar, "RIGHT", 11, 0); level:SetText("60"); level:SetTextColor(1, 0.82, 0)
+local mark = top:CreateTexture(nil, "OVERLAY"); mark:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
 SetRaidTargetIconTexture(mark, 8)
+local aura = top:CreateTexture(nil, "ARTWORK"); aura:SetTexture("Interface\\Icons\\Spell_Shadow_ShadowWordPain")
+local combo = CreateFrame("Frame", nil, top); combo:SetWidth(24); combo:SetHeight(6)
+for i = 1, 3 do
+    local pip = combo:CreateTexture(nil, "OVERLAY"); pip:SetTexture(1, 0.75, 0.15, 1)
+    pip:SetWidth(6); pip:SetHeight(6); pip:SetPoint("LEFT", combo, "LEFT", (i - 1) * 9, 0)
+end
 local cast = CreateFrame("StatusBar", nil, preview); cast:EnableMouse(false)
 cast:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar"); cast:SetStatusBarColor(1, 0.8, 0)
 cast:SetMinMaxValues(0, 1); cast:SetValue(0.6)
 local castText = cast:CreateFontString(nil, "OVERLAY"); castText:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
 castText:SetPoint("CENTER", cast, "CENTER", 0, 0); castText:SetText("Fireball")
-local aura = bar:CreateTexture(nil, "ARTWORK"); aura:SetTexture("Interface\\Icons\\Spell_Shadow_ShadowWordPain")
-local combo = bar:CreateFontString(nil, "OVERLAY"); combo:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
-combo:SetTextColor(1, 0.75, 0.15); combo:SetText("* * *")
-local previewGlow = bar:CreateTexture(nil, "BORDER")
-previewGlow:SetTexture("Interface\\Tooltips\\Nameplate-Glow"); previewGlow:SetAllPoints(border)
-previewGlow:SetBlendMode("ADD")
-previewGlow:SetVertexColor(1, 0.8, 0.3, 0.7)
-y = y - 220
-Text("Size and target emphasis", "heading")
-Check("Nameplate Scale", "Adjust plate size", 1, "Nameplate Scale")
-Check("Nameplate Details", "Target emphasis, marks and details", 1, "Nameplate Details")
-Check("Nameplate Class Colors", "Class colors for players", 1, "Nameplate Class Colors")
-Slider("nameplate_scale", "Plate size", 0.1, 4, 0.05, 1, "x")
-Check("nameplate_follow_ui", "Multiply plate size by global UI scale", 0)
-Text("Names and levels keep their original font size and native ownership.", "hint", 30)
-Slider("nameplate_target_scale", "Extra target size", 1, 1.5, 0.05, 1.1, "x")
-Slider("nameplate_other_alpha", "Other plates' opacity with a target", 0.2, 1, 0.05, 0.8, "")
-Check("nameplate_target_glow", "Warm highlight on your target", 0)
-Text("Marked units retain at least 90% opacity. Native clicks and mouseover remain intact.", "hint", 34)
-Text("Fade less important plates", "heading")
-Check("nameplate_fade_critters", "Critters", 0)
-Check("nameplate_fade_totems", "Totems", 0)
-Check("nameplate_fade_pets", "Other players' pets, guardians and totems", 0)
-Check("nameplate_fade_trivial", "Grey-level enemies", 0)
-Check("nameplate_fade_neutral", "Neutral units not in combat", 0)
-Slider("nameplate_fade_alpha", "Faded plate opacity", 0.1, 0.8, 0.05, 0.3, "")
-Text("Your target and raid-marked units are never faded. Faded plates can still be clicked. Requires target emphasis, marks and details.", "hint", 46)
-Text("Raid target marks", "heading")
-Check("nameplate_marks", "Adjust native raid marks", 1)
-Slider("nameplate_raidmark_size", "Mark size", 12, 40, 1, 20, " px")
-Choice("nameplate_raidmark_position", "Mark position", {"left", "above", "right"}, {"Left", "Above name", "Right"}, "left")
-Text("Turning this off restores the native position; the game still shows raid marks.", "hint", 30)
-Text("Health, auras and attention", "heading")
-Choice("nameplate_health", "Health text", {0, 1, 2, 3}, {"Off", "Percent", "Health", "Health + percent"}, 1)
-Check("nameplate_health_target", "Health text on target only", 1)
-Check("nameplate_level", "Level in the plate's level slot", 1)
-Check("nameplate_own_auras", "Your debuffs (including your pet)", 1)
-Check("nameplate_cc", "One crowd-control effect, any caster", 1)
-Check("nameplate_enemy_buffs", "Also show up to two enemy buffs", 0)
-Slider("nameplate_aura_count", "Maximum own debuffs", 1, 6, 1, 3, "")
-Slider("nameplate_aura_size", "Aura icon size", 14, 32, 1, 20, " px")
-Check("nameplate_combo", "Combo points on your target", 1)
-Check("nameplate_targeting", "Label enemies targeting you", 0)
-Text("Aura durations come from the client. Effects without known timing have no countdown.", "hint", 34)
-Text("Castbars", "heading")
-Check("Nameplate Castbar", "Nameplate castbars", 1, "Nameplate Castbar")
-Check("nameplate_uninterruptible", "Grey bars for uninterruptible casts", 1)
-Slider("nameplate_cast_height", "Castbar height", 6, 18, 1, 10, " px")
-Slider("nameplate_cast_gap", "Space below health bar", 0, 16, 1, 3, " px")
-Text("Enemy cooldowns", "heading")
-Check("cooldowns", "Show estimated enemy cooldowns", 1, "Enemy Nameplate Cooldowns")
-Check("nameplate_cd_target", "Cooldowns on target only", 0)
-Text("Observed enemy players only. ~ means estimated: talents, resets and server rules can change timers. Items and unobserved abilities are not revealed.", "hint", 48)
-Slider("nameplate_cd_size", "Cooldown icon size", 14, 40, 1, 22, " px")
-Slider("nameplate_cd_count", "Maximum cooldown icons", 1, 8, 1, 5, "")
-Slider("nameplate_cd_minimum", "Minimum base cooldown", 5, 120, 1, 5, " s")
-Slider("nameplate_cd_offset", "Extra space above aura row", 0, 60, 1, 8, " px")
-local reset = CreateFrame("Button", "FNPNameplatesReset", content, "UIPanelButtonTemplate")
-reset:SetWidth(180); reset:SetHeight(24); reset:SetPoint("TOPLEFT", content, "TOPLEFT", 18, y)
-reset:SetText("Reset nameplate settings"); Theme.Button(reset)
-reset:SetScript("OnClick", function()
-    for _, control in pairs(controls) do
-        local key = control.key or control.choiceKey or (not control.moduleTitle and control.checkKey)
-        if key then FNP.SetOverride(key, control.fallback) end
-    end
-    Apply(); page:RefreshValues()
-end)
-controls.reset = reset; y = y - 36
-Text("Module enable choices are kept. Enemy cooldowns require NamPower 4.6.2+.", "hint", 34)
-content:SetHeight(-y + 18)
 
-function page:RefreshPreview()
-    local detail = FNP.IsEnabled("Nameplate Details")
-    local size = FNP.IsEnabled("Nameplate Scale") and FNP.GetNumber("nameplate_scale", 1, 0.1, 4) or 1
-    if FNP.IsEnabled("Nameplate Scale") then
-        if FNP.GetOverride("nameplate_follow_ui", 0) == 1 then size = size * UIParent:GetScale() end
-        if detail then size = size * FNP.GetNumber("nameplate_target_scale", 1.1, 1, 1.5) end
-    end
-    preview:SetScale(math.min(2.5, size))
-    FNP.SetNameplateFontSize(name, 10 / math.min(2.5, size))
-    local color = FNP.IsEnabled("Nameplate Class Colors") and RAID_CLASS_COLORS.MAGE or {r=1,g=0,b=0}
+local function Shown(region, shown) if shown then region:Show() else region:Hide() end end
+
+RefreshPreview = function()
+    local detail, scaled = FNP.IsEnabled("Nameplate Details"), FNP.IsEnabled("Nameplate Scale")
+    local size = scaled and FNP.GetNumber("nameplate_scale", 1, 0.1, 4) or 1
+    if scaled and FNP.GetOverride("nameplate_follow_ui", 0) == 1 then size = size * UIParent:GetScale() end
+    if scaled and detail then size = size * FNP.GetNumber("nameplate_target_scale", 1.1, 1, 1.5) end
+    size = math.min(1.5, size)
+    preview:SetScale(size)
+    -- Names keep their stock size on real plates.
+    FNP.SetNameplateFontSize(name, 10 / size)
+    local color = FNP.IsEnabled("Nameplate Class Colors") and RAID_CLASS_COLORS.MAGE or { r = 1, g = 0, b = 0 }
     bar:SetStatusBarColor(color.r, color.g, color.b)
     local mode = detail and FNP.GetNumber("nameplate_health", 1, 0, 3) or 0
     health:SetText(mode == 0 and "" or (mode == 1 and "72%" or (mode == 2 and "3.6k" or "3.6k  72%")))
-    if detail and FNP.GetOverride("nameplate_level", 1) == 1 then level:Show() else level:Hide() end
+    Shown(level, detail and FNP.GetOverride("nameplate_level", 1) == 1)
     local marks = detail and FNP.GetOverride("nameplate_marks", 1) == 1
     local markSize = marks and FNP.GetNumber("nameplate_raidmark_size", 20, 12, 40) / size or 20
     mark:SetWidth(markSize); mark:SetHeight(markSize); mark:ClearAllPoints()
-    local pos = marks and FNP.GetOverride("nameplate_raidmark_position", "left") or "above"
-    if pos == "above" then mark:SetPoint("BOTTOM", name, "TOP", 0, 4)
-    elseif pos == "right" then mark:SetPoint("LEFT", bar, "RIGHT", 18, 0)
+    local position = marks and FNP.GetOverride("nameplate_raidmark_position", "left") or "above"
+    if position == "above" then mark:SetPoint("BOTTOM", name, "TOP", 0, 4)
+    elseif position == "right" then mark:SetPoint("LEFT", bar, "RIGHT", 18, 0)
     else mark:SetPoint("RIGHT", bar, "LEFT", -4, 0) end
-    local top = pos == "above" and markSize + 10 or 6
-    combo:ClearAllPoints(); combo:SetPoint("BOTTOM", name, "TOP", 0, top)
-    if detail and FNP.GetOverride("nameplate_combo", 1) == 1 then combo:Show(); top = top + 10 else combo:Hide() end
+    local y = position == "above" and markSize + 10 or 6
+    combo:ClearAllPoints(); combo:SetPoint("BOTTOM", name, "TOP", 0, y)
+    if detail and FNP.GetOverride("nameplate_combo", 1) == 1 then combo:Show(); y = y + 10 else combo:Hide() end
     local auraSize = FNP.GetNumber("nameplate_aura_size", 20, 14, 32) / size
     aura:SetWidth(auraSize); aura:SetHeight(auraSize); aura:ClearAllPoints()
-    aura:SetPoint("BOTTOM", name, "TOP", 0, top)
-    if detail and (FNP.GetOverride("nameplate_own_auras", 1) == 1 or FNP.GetOverride("nameplate_cc", 1) == 1
-        or FNP.GetOverride("nameplate_enemy_buffs", 0) == 1) then aura:Show() else aura:Hide() end
+    aura:SetPoint("BOTTOM", name, "TOP", 0, y)
+    Shown(aura, detail and (FNP.GetOverride("nameplate_own_auras", 1) == 1 or FNP.GetOverride("nameplate_cc", 1) == 1
+        or FNP.GetOverride("nameplate_enemy_buffs", 0) == 1))
     cast:SetWidth(88); cast:SetHeight(FNP.GetNumber("nameplate_cast_height", 10, 6, 18))
     cast:ClearAllPoints(); cast:SetPoint("TOP", bar, "BOTTOM", 8, -FNP.GetNumber("nameplate_cast_gap", 3, 0, 16))
-    if FNP.IsEnabled("Nameplate Castbar") then cast:Show() else cast:Hide() end
-    if detail and FNP.GetOverride("nameplate_target_glow", 0) == 1 then previewGlow:Show() else previewGlow:Hide() end
+    Shown(cast, FNP.IsEnabled("Nameplate Castbar"))
+    Shown(glow, detail and FNP.GetOverride("nameplate_target_glow", 0) == 1)
 end
-function page:RefreshValues()
-    refreshing = true
-    local enabled = FostercareNameplates_Config.nameplatesEnabled ~= 0
-    master:SetChecked(enabled)
-    for _, control in pairs(controls) do
-        if control.key then control:SetValue(FNP.GetNumber(control.key, control.fallback, control.minimum, control.maximum))
-        elseif control.checkKey then
-            control:SetChecked(control.moduleTitle and FNP.IsEnabled(control.moduleTitle)
-                or (not control.moduleTitle and FNP.GetOverride(control.checkKey, control.fallback) == 1))
-        elseif control.choiceKey then
-            local value, label = FNP.GetOverride(control.choiceKey, control.fallback), control.labels[1]
-            for i, candidate in ipairs(control.values) do if candidate == value then label = control.labels[i] end end
-            control:SetText(control.title .. ": " .. label)
-        end
-    end
-    if enabled ~= FNP.nameplatesEnabled then ownerNote:SetText("Type /reload to apply your nameplate feature choice.")
-    elseif not enabled then ownerNote:SetText("Blizzard plates are active. FostercareNameplates nameplate features are inactive.")
-    elseif FNP.legacyOwner then ownerNote:SetText("Update FostercareTweaks to 1.3.0+ and restart. Its older nameplate system is still active.")
-    elseif not FNP.OwnsNameplates() then ownerNote:SetText("BlizzNameplatesPlus or ShaguPlates owns the plates. These settings stay inactive.")
-    elseif not CD:IsAvailable() then ownerNote:SetText("Enemy cooldowns need NamPower 4.6.2+. Other features are available.")
-    else ownerNote:SetText("Select a target for health and combo points. The preview shows sample values.") end
-    refreshing = nil; self:RefreshPreview()
-end
-
-settings:SetScript("OnShow", function() Resize(); page:RefreshValues() end)

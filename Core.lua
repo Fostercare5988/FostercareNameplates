@@ -9,7 +9,7 @@ if type(CLASSIC_API_VERSION) ~= "number" or CLASSIC_API_VERSION < 11600
     return
 end
 
-local FNP = { mods = {}, moduleOrder = {}, overwrites = {}, version = "1.1.0" }
+local FNP = { mods = {}, moduleOrder = {}, overwrites = {} }
 FostercareNameplates = FNP
 -- Older Tweaks builds still own their plates. Treat them as a competing owner
 -- rather than installing a second set of native hooks during an upgrade.
