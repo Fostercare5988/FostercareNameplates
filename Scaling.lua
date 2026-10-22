@@ -15,10 +15,6 @@ local function Dimensions(object, width, height)
     if object:GetHeight() ~= height then object:SetHeight(height) end
 end
 
--- Native parts whose anchor offsets follow the plate size. The name keeps its
--- stock size and anchors.
-local ANCHORED = { "healthbar", "border", "glow", "level", "levelicon", "dragon" }
-
 local function Capture(plate)
     if not plate.fnpOrigW then
         plate.fnpOrigW, plate.fnpOrigH = plate:GetWidth(), plate:GetHeight()
@@ -30,31 +26,7 @@ local function Capture(plate)
             plate[prefix .. "OrigW"] = w and w > 0 and w or entry[3]
             plate[prefix .. "OrigH"] = h and h > 0 and h or entry[4]
         end
-        plate.fnpAnchors = {}
-        for _, key in ipairs(ANCHORED) do
-            local object = plate[key]
-            if object then
-                local points = {}
-                for i = 1, object:GetNumPoints() do points[i] = { object:GetPoint(i) } end
-                plate.fnpAnchors[key] = points
-            end
-        end
-        if plate.level then
-            local _, size = plate.level:GetFont()
-            plate.fnpLevelFont = size
-        end
     end
-end
-
--- Native offsets are in unscaled plate units; without this the level text and
--- icons stay where a full-size plate would put them.
-local function Anchor(object, points, scale)
-    if not object or not points or not points[1] then return end
-    local first = points[1]
-    local p, a, r, x, y = object:GetPoint(1)
-    if p == first[1] and a == first[2] and r == first[3] and x == first[4] * scale and y == first[5] * scale then return end
-    object:ClearAllPoints()
-    for _, point in ipairs(points) do object:SetPoint(point[1], point[2], point[3], point[4] * scale, point[5] * scale) end
 end
 
 function FNP.LayoutNameplateCastbar(plate)
@@ -98,13 +70,8 @@ local function Apply(plate, restore)
     Dimensions(plate.glow, plate.fnpGlowOrigW * scale, plate.fnpGlowOrigH * scale)
     Dimensions(plate.levelicon, plate.fnpLevelOrigW * scale, plate.fnpLevelOrigH * scale)
     Dimensions(plate.dragon, plate.fnpDragonOrigW * scale, plate.fnpDragonOrigH * scale)
-    for _, key in ipairs(ANCHORED) do Anchor(plate[key], plate.fnpAnchors[key], scale) end
-    -- Engine-created name/level regions keep their native parent; never insert
-    -- them into Lua-owned scaling frames.
-    if plate.fnpLevelFont then
-        FNP.SetNameplateFontSize(plate.level, scale == 1 and plate.fnpLevelFont or math.max(7, plate.fnpLevelFont * scale))
-    end
-    if restore then return end
+    -- Engine-created name/level regions retain their original parent, font,
+    -- scale and anchors. Do not insert them into Lua-owned scaling frames.
     FNP.LayoutNameplateCastbar(plate)
     if FNP.Nameplates then FNP.Nameplates:LayoutExtras(plate) end
 end

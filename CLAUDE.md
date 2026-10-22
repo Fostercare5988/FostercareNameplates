@@ -2,7 +2,7 @@
 
 Nameplate features: health and auras, cast bars, class colors, scaling, enemy
 cooldowns. Player guide: `docs/USER_GUIDE.md`. Regression tests:
-`regressions/FostercareNameplates` in VanillaForge (17 tests).
+`regressions/FostercareNameplates` in VanillaForge (15 tests).
 
 | File | Job |
 | --- | --- |
@@ -24,5 +24,7 @@ Things to know:
 - At logout the client can free any part of a plate before our cleanup runs.
   `RestorePlate` (Lifecycle.lua) does all logout work for one plate inside
   `pcall`; keep plate-touching logout code there, not in module loops.
-- Scaling moves native parts by scaling their captured anchor offsets
-  (`fnpAnchors`); the level font scales with the plate, the name does not.
+- Never re-anchor or re-font the engine's own plate regions (level, level icon,
+  border, bar, dragon) from Scaling. 1.1.1 did (anchor offsets and level font
+  scaled with the plate) and the client crashed on login (ACCESS_VIOLATION,
+  2026-10-22); it was backed out. The raid mark re-anchor in Details predates it.

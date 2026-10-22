@@ -14,7 +14,7 @@ independently of [FostercareTweaks](https://github.com/Fostercare5988/Fostercare
 - Optional estimates of observed enemy-player cooldowns using current client data.
 
 Scaling, details, class colors, castbars and cooldown estimates each have their own
-switch. Native name fonts, mouseover and targeting retain game ownership.
+switch. Native name/level fonts, mouseover and targeting retain game ownership.
 BlizzNameplatesPlus and ShaguPlates take precedence when loaded.
 
 ## Requirements
