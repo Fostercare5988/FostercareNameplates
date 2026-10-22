@@ -114,13 +114,15 @@ function NP:RefreshMarks()
 end
 
 -- The level oval's center lies past the bar's right end by a tenth of the bar
--- width (measured in play, 2026-10-22), so it follows the plate size.
+-- width (measured in play, 2026-10-22), so it follows the plate size. At 9 px
+-- and below the digits were unreadable on the gold oval.
 local function PlaceLevel(plate)
     local label = plate.fnpLevel
     local x = math.floor(plate.healthbar:GetWidth() * 0.1 + 0.5)
     if label.fnpX ~= x then
         label.fnpX = x; label:ClearAllPoints(); label:SetPoint("CENTER", plate.healthbar, "RIGHT", x, 0)
     end
+    FNP.SetNameplateFontSize(label, math.max(8, 10 * (plate.fnpVisualScale or 1)))
 end
 
 function NP:TopSpace(plate)
@@ -133,9 +135,7 @@ end
 
 function NP:LayoutExtras(plate)
     FNP.SetNameplateFontSize(plate.fnpHealth, math.max(7, 9 * (plate.fnpVisualScale or 1)))
-    if plate.fnpLevel then
-        FNP.SetNameplateFontSize(plate.fnpLevel, math.max(7, 9 * (plate.fnpVisualScale or 1))); PlaceLevel(plate)
-    end
+    if plate.fnpLevel then PlaceLevel(plate) end
     if plate.fnpTargeting then
         local anchor = plate.fnpCastbar or plate.healthbar
         if plate.fnpTargeting.fnpAnchor ~= anchor then
@@ -204,8 +204,10 @@ function NP:Level(plate, unit)
     end
     NativeLevel(plate, false)
     if not label then
-        label = plate.healthbar:CreateFontString(nil, "OVERLAY")
-        label:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE"); plate.fnpLevel = label
+        -- On the plate, like the native level: a health bar child draws under
+        -- the plate's border, which tinted the digits into the oval's gold.
+        label = plate:CreateFontString(nil, "OVERLAY")
+        label:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE"); plate.fnpLevel = label
     end
     PlaceLevel(plate)
     -- Same rules as the stock target frame: difficulty color for enemies,
@@ -219,7 +221,6 @@ function NP:Level(plate, unit)
     if label.fnpR ~= r or label.fnpG ~= g or label.fnpB ~= b then
         label.fnpR, label.fnpG, label.fnpB = r, g, b; label:SetTextColor(r, g, b)
     end
-    FNP.SetNameplateFontSize(label, math.max(7, 9 * (plate.fnpVisualScale or 1)))
     Visible(label, true)
 end
 

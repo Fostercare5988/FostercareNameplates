@@ -14,7 +14,7 @@ independently of [FostercareTweaks](https://github.com/Fostercare5988/Fostercare
 - Optional estimates of observed enemy-player cooldowns using current client data.
 
 Scaling, details, class colors, castbars and cooldown estimates each have their own
-switch. Native name/level fonts, mouseover and targeting retain game ownership.
+switch. Native names, mouseover and targeting stay with the game.
 BlizzNameplatesPlus and ShaguPlates take precedence when loaded.
 
 ## Requirements
@@ -31,7 +31,7 @@ the folder to `FostercareNameplates`. The folder must contain
 `FostercareNameplates.toc`. Restart the game so the addon appears in the AddOns list.
 
 **The addon starts disabled.** Enable it in the character selection AddOns list
-when ready, then use **`/fnp`** for its settings and sample preview. Your enemy
+when ready, then use **`/fnp`** for its settings and live preview. Your enemy
 nameplate key binding still controls whether the game shows plates.
 The settings master switch takes effect after `/reload`; other feature choices
 apply live while enabled. Settings save per character.
