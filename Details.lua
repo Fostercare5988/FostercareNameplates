@@ -35,9 +35,6 @@ function FNP.MigrateNameplateSettings()
 end
 
 local function Visible(object, shown)
-    -- At logout the client can free a plate's child frames before Shutdown
-    -- walks them, leaving a table without methods.
-    if not object.IsShown then return end
     shown = shown and true or false
     if (object:IsShown() and true or false) ~= shown then if shown then object:Show() else object:Hide() end end
 end
@@ -411,10 +408,13 @@ function NP:Shutdown()
     if driver then driver:UnregisterAllEvents() end
     if ticker then ticker:Cancel(); ticker = nil end
     self.pending, self.timed = {}, {}
-    for plate in pairs(lib.plates) do
-        Clear(plate); self:LayoutMark(plate, true)
-    end
     self.targetPlate, self.targetGUID = nil, nil
+end
+
+-- Logout/reload: give one engine plate its stock mark and opacity back.
+function NP:RestorePlate(plate)
+    self:LayoutMark(plate, true)
+    if plate:GetAlpha() ~= 1 then plate:SetAlpha(1) end
 end
 
 function NP:ApplyConfiguration(layoutOnly)
