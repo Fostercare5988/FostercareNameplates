@@ -19,7 +19,7 @@ BlizzNameplatesPlus and ShaguPlates take precedence when loaded.
 
 ## Requirements
 
-WoW 1.12.1 build 5875, **ClassicAPI 1.16.0+** and **SuperWoW 2.2+**.
+WoW 1.12.1 build 5875, **ClassicAPI 1.17.3+** and **SuperWoW 2.2+**.
 **NamPower 4.6.2+** is optional and enables enemy cooldown estimates.
 FostercareTweaks is optional. If installed, update it to **1.3.0+** for the split.
 Older builds with active nameplate features take precedence to avoid duplicate hooks.
