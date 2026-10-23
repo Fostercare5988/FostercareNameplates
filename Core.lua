@@ -1,10 +1,10 @@
 -- FostercareNameplates owns only nameplate features and their settings.
 local superMajor, superMinor = string.match(tostring(SUPERWOW_VERSION or ""), "^(%d+)%.(%d+)")
 superMajor, superMinor = tonumber(superMajor), tonumber(superMinor)
-if type(CLASSIC_API_VERSION) ~= "number" or CLASSIC_API_VERSION < 11600
+if type(CLASSIC_API_VERSION) ~= "number" or CLASSIC_API_VERSION < 11703
     or not superMajor or not (superMajor > 2 or (superMajor == 2 and superMinor >= 2)) then
     if DEFAULT_CHAT_FRAME then
-        DEFAULT_CHAT_FRAME:AddMessage("FostercareNameplates requires ClassicAPI 1.16.0+ and SuperWoW 2.2+.", 1, 0.3, 0.3)
+        DEFAULT_CHAT_FRAME:AddMessage("FostercareNameplates requires ClassicAPI 1.17.3+ and SuperWoW 2.2+.", 1, 0.3, 0.3)
     end
     return
 end

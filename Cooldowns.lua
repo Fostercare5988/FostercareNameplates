@@ -64,7 +64,7 @@ local function Icon(row, index)
     icon.texture = icon:CreateTexture(nil, "ARTWORK")
     icon.texture:SetAllPoints(icon)
     icon.texture:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-    icon.sweep = CreateFrame("Model", nil, icon, "CooldownFrameTemplate")
+    icon.sweep = CreateFrame("Cooldown", nil, icon, "CooldownFrameTemplate")
     icon.sweep:SetAllPoints(icon)
     icon.sweep.noCooldownCount = true
     icon.textFrame = CreateFrame("Frame", nil, icon)
