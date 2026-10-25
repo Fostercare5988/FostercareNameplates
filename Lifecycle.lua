@@ -94,28 +94,13 @@ if FNP.OwnsNameplates() then
     libnameplate:RegisterEvent("PLAYER_LOGOUT")
 end
 
--- Engine-created plates can outlive the Lua UI. Unlink only our regions/frames
--- before reload frees their font/layout resources, then restore native layout.
-local function RestorePlate(plate)
-    for _, key in ipairs({ "fnpHealth", "fnpLevel",
-        "fnpAuras", "fnpCombo", "fnpTargetGlow", "fnpTargeting",
-        "fnpCastbar", "fnpEnemyCooldowns" }) do
-        local object = plate[key]
-        if object then
-            object:Hide(); object:ClearAllPoints(); object:SetParent(UIParent)
-        end
-    end
-    if FNP.Nameplates then FNP.Nameplates:RestorePlate(plate) end
-    if FNP.RestoreNameplateScale then FNP.RestoreNameplateScale(plate) end
-end
-
+-- Stop our own events and timers only. At logout the client is already
+-- freeing the plates; reparenting, resizing or re-anchoring them then was
+-- followed by ERROR #124 (SGroupPtr invalid block, 2026-10-22).
 local function ShutdownNameplates()
     libnameplate.stopping = true
     libnameplate:UnregisterAllEvents()
     if FNP.Nameplates then FNP.Nameplates:Shutdown() end
-    -- At logout the client can free any part of a plate first, leaving tables
-    -- without methods. Such a plate is going away; skip the rest of it.
-    for plate in pairs(plateRegistry) do pcall(RestorePlate, plate) end
 end
 
 FNP.SetEventHandler(libnameplate, function(_, ev, a1)

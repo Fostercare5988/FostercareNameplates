@@ -426,13 +426,19 @@ local function Faded(plate, unit, now)
     return plate.fnpNeutralIdle
 end
 
+-- A plate that gets a unit is drawn at once. Hiding it first and drawing on
+-- the next frame made the health text flicker whenever a plate came back.
+local function Bind(plate, unit)
+    plate.fnpFixedFade, plate.fnpFadeAt = nil, nil
+    if not unit then Clear(plate); plate.fnpDetailGUID = nil; return end
+    NP.pending[plate], plate.fnpNeedsDetails, plate.fnpDetailGUID = nil, nil, unit
+    NP:Select(plate, unit == NP.targetGUID)
+    NP:Health(plate, unit); NP:Level(plate, unit); NP:Auras(plate, unit); NP:Targeting(plate, unit)
+end
+
 local function Render(plate, unit, now)
     if not NP.active then return end
-    if plate.fnpDetailGUID ~= unit then
-        Clear(plate); plate.fnpDetailGUID = unit
-        plate.fnpFixedFade, plate.fnpFadeAt = nil, nil
-        NP:Queue(plate, "health"); NP:Queue(plate, "level"); NP:Queue(plate, "auras"); NP:Queue(plate, "targeting")
-    end
+    if plate.fnpDetailGUID ~= unit then Bind(plate, unit) end
     local selected = unit and unit == NP.targetGUID and true or false
     if selected ~= plate.fnpIsTarget then NP:Select(plate, selected) end
     local wanted = NP.targetGUID and not selected and NP.settings.otherAlpha or 1
@@ -462,12 +468,6 @@ function NP:Shutdown()
     if ticker then ticker:Cancel(); ticker = nil end
     self.pending, self.timed = {}, {}
     self.targetPlate, self.targetGUID = nil, nil
-end
-
--- Logout/reload: give one engine plate its stock mark and opacity back.
-function NP:RestorePlate(plate)
-    self:LayoutMark(plate, true); NativeLevel(plate, true)
-    if plate:GetAlpha() ~= 1 then plate:SetAlpha(1) end
 end
 
 function NP:ApplyConfiguration(layoutOnly)
@@ -563,9 +563,7 @@ module.enable = function(self)
         end)
         table.insert(lib.OnUpdate, Render)
         table.insert(lib.OnAdded, function(plate, unit)
-            if not NP.active then return end
-            Clear(plate); plate.fnpDetailGUID = unit; NP:Select(plate, unit and unit == NP.targetGUID and true or false)
-            NP:Queue(plate, "level"); NP:Queue(plate, "auras"); NP:Queue(plate, "targeting")
+            if NP.active then Bind(plate, unit) end
         end)
         local function Removed(plate)
             Clear(plate); plate.fnpDetailGUID = nil

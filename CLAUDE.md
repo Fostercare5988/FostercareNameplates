@@ -2,7 +2,7 @@
 
 Nameplate features: health and auras, cast bars, class colors, scaling, enemy
 cooldowns. Player guide: `docs/USER_GUIDE.md`. Regression tests:
-`regressions/FostercareNameplates` in VanillaForge (27 tests).
+`regressions/FostercareNameplates` in VanillaForge (30 tests).
 
 | File | Job |
 | --- | --- |
@@ -22,9 +22,12 @@ Things to know:
 
 - Work per plate per frame runs only while a module needs rendering
   (`FNP.RefreshRendering`). Keep per-frame callbacks cheap; queries are throttled.
-- At logout the client can free any part of a plate before our cleanup runs.
-  `RestorePlate` (Lifecycle.lua) does all logout work for one plate inside
-  `pcall`; keep plate-touching logout code there, not in module loops.
+- Never touch a plate at logout. The client is already freeing plates then;
+  restoring them was followed by ERROR #124 (SGroupPtr invalid block,
+  2026-10-22). `ShutdownNameplates` (Lifecycle.lua) only stops our events and
+  timers.
+- A plate that gets a unit is drawn at once (`Bind` in Details.lua); hiding it
+  and drawing a frame later made the health text flicker.
 - Never re-anchor or re-font the engine's own plate regions (level, level icon,
   border, bar, dragon) from Scaling. 1.1.1 did (anchor offsets and level font
   scaled with the plate) and the client crashed on login (ACCESS_VIOLATION,
