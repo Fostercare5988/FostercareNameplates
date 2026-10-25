@@ -11,39 +11,10 @@ end
 
 local FNP = { mods = {}, moduleOrder = {}, overwrites = {} }
 FostercareNameplates = FNP
--- Older Tweaks builds still own their plates. Treat them as a competing owner
--- rather than installing a second set of native hooks during an upgrade.
-FNP.legacyOwner = FostercareTweaks and FostercareTweaks.libnameplate
-    and FostercareTweaks.nameplatesEnabled
 if type(FostercareNameplates_Config) ~= "table" then FostercareNameplates_Config = {} end
 local config = FostercareNameplates_Config
 if type(config.overwrites) ~= "table" then config.overwrites = {} end
-
--- Legacy settings cross only through this one-time scalar import. The optional
--- load ordering lets ClassicAPI expose Tweaks' saved table before this file.
--- Never alias its table, cache, registry, hooks or runtime objects.
-if config.settingsVersion == nil then
-    local legacy = FostercareTweaks_Config
-    if type(legacy) == "table" then
-        for _, key in ipairs({ "Nameplate Scale", "Nameplate Details", "Nameplate Class Colors",
-            "Nameplate Castbar", "Enemy Nameplate Cooldowns", "nameplatesEnabled", "nameplate_layout_version" }) do
-            local value = legacy[key]
-            if config[key] == nil and type(value) == "number" then config[key] = value end
-        end
-        if type(legacy.overwrites) == "table" then
-            for key, value in pairs(legacy.overwrites) do
-                if type(key) == "string" and string.sub(key, 1, 10) == "nameplate_"
-                    and config.overwrites[key] == nil and (type(value) == "number" or type(value) == "string") then
-                    config.overwrites[key] = value
-                end
-            end
-        end
-        if config.overwrites.nameplate_uninterruptible == nil then
-            config.overwrites.nameplate_uninterruptible = legacy["Uninterruptible Castbars"] == 0 and 0 or 1
-        end
-    end
-    config.settingsVersion = 1
-end
+config.settingsVersion = nil -- retired with the FostercareTweaks settings import
 
 function FNP:register(module)
     if not self.mods[module.title] then table.insert(self.moduleOrder, module.title) end

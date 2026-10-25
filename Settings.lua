@@ -141,7 +141,6 @@ table.insert(syncs, function()
     local text = ""
     if enabled ~= FNP.nameplatesEnabled then text = "Type /reload to apply."
     elseif not enabled then text = "Off: Blizzard plates are in use."
-    elseif FNP.legacyOwner then text = "Update FostercareTweaks to 1.3.0+ and restart."
     elseif not Live() then text = "BlizzNameplatesPlus or ShaguPlates owns the plates."
     elseif not CD:IsAvailable() then text = "Enemy cooldowns need NamPower 4.6.2+." end
     status:SetText(text)

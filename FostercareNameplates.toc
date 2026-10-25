@@ -6,7 +6,7 @@
 ## X-Website: https://github.com/Fostercare5988/FostercareNameplates
 ## X-ClassicAPI-Min-Version: 1.17.3
 ## Dependencies: !!!ClassicAPI
-## OptionalDeps: FostercareTweaks, BlizzNameplatesPlus, ShaguPlates
+## OptionalDeps: BlizzNameplatesPlus, ShaguPlates
 ## DefaultState: disabled
 ## SavedVariablesPerCharacter: FostercareNameplates_Config
 ## LoadSavedVariablesFirst: 1
