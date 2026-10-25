@@ -75,11 +75,14 @@ end
 -- Native 1.12 FontStrings have no Frame GetScale/SetScale methods.
 -- Use this only for addon-owned labels. Engine-owned name/level text scales
 -- independently in the native renderer; preserve both font and parent ownership.
+-- The size we set is cached: GetFont can report a scaled, non-integer height,
+-- and re-setting the font on every health update made the text flicker.
 function FNP.SetNameplateFontSize(text, size)
     if not text then return end
-    local font, current, flags = text:GetFont()
     size = math.max(1, math.floor(size + 0.5))
-    if font and current ~= size then text:SetFont(font, size, flags) end
+    if text.fnpFontSize == size then return end
+    local font, _, flags = text:GetFont()
+    if font then text:SetFont(font, size, flags); text.fnpFontSize = size end
 end
 
 function FNP.SetOverride(key, value)
