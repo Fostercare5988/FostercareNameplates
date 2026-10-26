@@ -2,7 +2,7 @@
 
 Nameplate features: health and auras, cast bars, class colors, scaling, enemy
 cooldowns. Player guide: `docs/USER_GUIDE.md`. Regression tests:
-`regressions/FostercareNameplates` in VanillaForge (30 tests).
+`regressions/FostercareNameplates` in VanillaForge (33 tests).
 
 | File | Job |
 | --- | --- |
