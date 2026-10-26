@@ -14,9 +14,11 @@ local module = FNP:register({
 })
 
 local initialized, active
-local CAST_EVENTS = {"UNIT_SPELLCAST_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_FAILED",
-    "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_DELAYED", "UNIT_SPELLCAST_CHANNEL_START",
-    "UNIT_SPELLCAST_CHANNEL_UPDATE", "UNIT_SPELLCAST_CHANNEL_STOP", "UNIT_CASTEVENT"}
+-- The ClassicAPI cast events that fire for other units. FAILED, DELAYED and
+-- CHANNEL_UPDATE fire only for the player; SuperWoW's UNIT_CASTEVENT also
+-- fires on every melee swing.
+local CAST_EVENTS = {"UNIT_SPELLCAST_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_INTERRUPTED",
+    "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_CHANNEL_STOP"}
 local function SyncEvents()
     if not module.events then return end
     if module.listening == active then return end
@@ -233,11 +235,10 @@ module.enable = function(self)
     module.events = events
     SyncEvents()
     FNP.SetEventHandler(events, function(_, ev, unit)
-        if not active or not FNP.OwnsNameplates() or not unit then return end
-        -- SuperWoW's UNIT_CASTEVENT passes a caster GUID; UNIT_SPELLCAST_* pass unit tokens.
-        local plate
-        if ev == "UNIT_CASTEVENT" then plate = C_NamePlate.GetNamePlateForGUID(unit)
-        else plate = C_NamePlate.GetNamePlateForUnit(unit) end
+        -- ClassicAPI fires one event per token naming the caster; the
+        -- nameplateN one is enough.
+        if not active or not unit or not string.find(unit, "^nameplate") or not FNP.OwnsNameplates() then return end
+        local plate = C_NamePlate.GetNamePlateForUnit(unit)
         if plate and plate.fnpCastbar then plate.fnpCastbar.nextQuery = nil end
     end)
 end
