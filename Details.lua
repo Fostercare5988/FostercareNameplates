@@ -576,6 +576,9 @@ module.enable = function(self)
                 end
                 NP:TargetChanged()
             elseif unit then
+                -- ClassicAPI fires a unit event once per token (target, markN,
+                -- raidN, nameplateN); a plate's unit always gets the nameplateN one.
+                if not string.find(unit, "^nameplate") then return end
                 if ev == "UNIT_FACTION" then
                     local plate = C_NamePlate.GetNamePlateForUnit(unit)
                     if plate and lib.plates[plate] then NP:Queue(plate, "auras"); NP:Queue(plate, "targeting") end
