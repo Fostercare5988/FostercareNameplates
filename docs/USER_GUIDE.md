@@ -29,9 +29,9 @@ cannot take effect, because their feature is off, are dimmed.
 - **Level in the level slot** shows the level in the round slot at the right end
   of the plate, sized with the plate and colored by difficulty. Skull-level units
   show ??. While it is on, the game's own level number and skull are hidden.
-- **Combo points** show above your target's name. **Label enemies targeting you**
-  marks hostile non-player units whose target is you. It shows targeting, not
-  threat.
+- **Combo points** show above your target's name. **Label NPCs targeting you**
+  marks hostile non-player units whose target is you, checked five times a
+  second. It shows targeting, not threat.
 - **Raid marks** use the game's icon. Set 12–40 px and left, above-name or right.
   **Move raid marks** off puts them back where the game draws them.
 - **Auras**: up to 1–6 of your debuffs (your pet's too), one crowd-control effect

@@ -19,7 +19,10 @@ local lib = FNP.libnameplate
 local ticker, queued, driver
 local auraSlots = {}
 local DETAIL_EVENTS = { "PLAYER_TARGET_CHANGED", "PLAYER_COMBO_POINTS", "UNIT_HEALTH", "UNIT_MAXHEALTH",
-    "UNIT_AURA", "UNIT_TARGET", "UNIT_FACTION", "UNIT_LEVEL", "RAID_TARGET_UPDATE", "PLAYER_ENTERING_WORLD", "ADDON_LOADED" }
+    "UNIT_AURA", "UNIT_FACTION", "UNIT_LEVEL", "RAID_TARGET_UPDATE", "PLAYER_ENTERING_WORLD", "ADDON_LOADED" }
+-- 1.12 has no event for a unit changing its target (the stock target-of-target
+-- frame polls in OnUpdate), so Render asks again on this cadence.
+local TARGETING_INTERVAL = 0.2
 
 function FNP.MigrateNameplateSettings()
     local cfg = FostercareNameplates_Config
@@ -342,9 +345,15 @@ function NP:Combo(plate)
     Visible(row, true)
 end
 
-function NP:Targeting(plate, unit)
-    local show = self.settings.targeting and unit and not UnitIsPlayer(unit)
-        and UnitCanAttack("player", unit) and UnitIsUnit(unit .. "target", "player") and true or false
+-- recheck: the unit is new or its faction changed. Kind and faction hold while
+-- the plate keeps its unit, and the "<guid>target" token is built once.
+function NP:Targeting(plate, unit, recheck)
+    if recheck and unit then
+        if plate.fnpTargetUnit ~= unit then plate.fnpTargetUnit, plate.fnpTargetToken = unit, unit .. "target" end
+        plate.fnpTargetCandidate = not UnitIsPlayer(unit) and UnitCanAttack("player", unit) and true or false
+    end
+    local show = self.settings.targeting and unit and plate.fnpTargetUnit == unit and plate.fnpTargetCandidate
+        and UnitIsUnit(plate.fnpTargetToken, "player") and true or false
     local label = plate.fnpTargeting
     if show and not label then
         label = plate:CreateFontString(nil, "OVERLAY"); label:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
@@ -365,7 +374,7 @@ local function Flush()
             if flags.health then NP:Health(plate, unit) end
             if flags.level then NP:Level(plate, unit) end
             if flags.auras then NP:Auras(plate, unit) end
-            if flags.targeting then NP:Targeting(plate, unit) end
+            if flags.targeting then NP:Targeting(plate, unit, true) end
         else Clear(plate) end
     end
 end
@@ -427,11 +436,11 @@ end
 -- A plate that gets a unit is drawn at once. Hiding it first and drawing on
 -- the next frame made the health text flicker whenever a plate came back.
 local function Bind(plate, unit)
-    plate.fnpFixedFade, plate.fnpFadeAt = nil, nil
+    plate.fnpFixedFade, plate.fnpFadeAt, plate.fnpTargetingAt = nil, nil, nil
     if not unit then Clear(plate); plate.fnpDetailGUID = nil; return end
     NP.pending[plate], plate.fnpNeedsDetails, plate.fnpDetailGUID = nil, nil, unit
     NP:Select(plate, unit == NP.targetGUID)
-    NP:Health(plate, unit); NP:Level(plate, unit); NP:Auras(plate, unit); NP:Targeting(plate, unit)
+    NP:Health(plate, unit); NP:Level(plate, unit); NP:Auras(plate, unit); NP:Targeting(plate, unit, true)
 end
 
 local function Render(plate, unit, now)
@@ -451,6 +460,10 @@ local function Render(plate, unit, now)
     -- so compare with what the plate showed after our last write.
     if wanted ~= plate.fnpAlpha or plate:GetAlpha() ~= plate.fnpDrawnAlpha then
         plate:SetAlpha(wanted); plate.fnpAlpha, plate.fnpDrawnAlpha = wanted, plate:GetAlpha()
+    end
+    if NP.settings.targeting and unit and (not plate.fnpTargetingAt or now >= plate.fnpTargetingAt) then
+        plate.fnpTargetingAt = now + TARGETING_INTERVAL
+        NP:Targeting(plate, unit)
     end
     local glow = plate.fnpTargetGlow
     if selected and NP.settings.glow and not glow then
@@ -554,10 +567,9 @@ module.enable = function(self)
                     if plate and lib.plates[plate] then NP:Queue(plate, "auras"); NP:Queue(plate, "targeting") end
                     return
                 end
-                local kind = ev == "UNIT_AURA" and "auras" or (ev == "UNIT_TARGET" and "targeting"
-                    or (ev == "UNIT_LEVEL" and "level" or "health"))
+                local kind = ev == "UNIT_AURA" and "auras" or (ev == "UNIT_LEVEL" and "level" or "health")
                 if (kind == "level" and not NP.settings.level) or (kind == "auras" and not NP.settings.own and not NP.settings.cc and not NP.settings.buffs)
-                    or (kind == "targeting" and not NP.settings.targeting) or (kind == "health" and NP.settings.health == 0) then return end
+                    or (kind == "health" and NP.settings.health == 0) then return end
                 local plate = C_NamePlate.GetNamePlateForUnit(unit)
                 if plate and lib.plates[plate] then
                     if kind ~= "health" or not NP.settings.healthTarget or plate.fnpIsTarget then NP:Queue(plate, kind) end
