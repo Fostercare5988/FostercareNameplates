@@ -156,7 +156,7 @@ UI.Heading(words, "On the plate", LEFT, -192)
 Option(words, "nameplate_level", 1, "Level in the level slot",
     "Sized with the plate and colored by difficulty. Off shows the game's own level.", LEFT, -212, Details)
 Option(words, "nameplate_combo", 1, "Combo points on your target", nil, LEFT, -238, Details)
-Option(words, "nameplate_targeting", 0, "Label enemies targeting you", nil, LEFT, -264, Details)
+Option(words, "nameplate_targeting", 0, "Label NPCs targeting you", "Hostile NPCs whose target is you. Targeting, not threat.", LEFT, -264, Details)
 UI.Heading(words, "Raid marks", LEFT, -304)
 Option(words, "nameplate_marks", 1, "Move raid marks", "Off leaves marks where the game puts them.", LEFT, -324, Details)
 local marks = Both(Details, Set("nameplate_marks", 1))
