@@ -77,8 +77,6 @@ function NP:LayoutMark(plate, restore)
         for i = 1, icon:GetNumPoints() do state.points[i] = { icon:GetPoint(i) } end
         plate.fnpNativeMark = state
     end
-    -- Old versions suppressed this native region even without a valid unit.
-    if not restore and FNP.OwnsNameplates() and icon:GetAlpha() ~= 1 then icon:SetAlpha(1) end
     if restore or not self.settings.marks then
         if plate.fnpMarkOwned then
             local state = plate.fnpNativeMark
@@ -448,7 +446,12 @@ local function Render(plate, unit, now)
     if plate.raidicon and plate.raidicon:IsShown() then
         wanted = math.max(wanted, 0.9); NP:LayoutMark(plate)
     end
-    if plate:GetAlpha() ~= wanted then plate:SetAlpha(wanted) end
+    -- A plate reports its alpha as a byte (n/255) and the player's
+    -- nameplate*Alpha CVars replace writes of 1 and 0.5 (ClassicAPI 1.17.8),
+    -- so compare with what the plate showed after our last write.
+    if wanted ~= plate.fnpAlpha or plate:GetAlpha() ~= plate.fnpDrawnAlpha then
+        plate:SetAlpha(wanted); plate.fnpAlpha, plate.fnpDrawnAlpha = wanted, plate:GetAlpha()
+    end
     local glow = plate.fnpTargetGlow
     if selected and NP.settings.glow and not glow then
         glow = plate:CreateTexture(nil, "BORDER")
