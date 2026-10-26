@@ -95,6 +95,11 @@ module.enable = function(self)
         FNP.SetEventHandler(self.watcher, FNP.RefreshNameplateScale)
     end
     self.watcher:UnregisterAllEvents()
-    if FNP.IsEnabled(module.title) and FNP.OwnsNameplates() then self.watcher:RegisterEvent("UI_SCALE_CHANGED") end
+    if FNP.IsEnabled(module.title) and FNP.OwnsNameplates() then
+        -- DISPLAY_SIZE_CHANGED is a 1.12 event. UI_SCALE_CHANGED is in no
+        -- FrameXML file or DLL doc, so it is asked for only if the client knows it.
+        self.watcher:RegisterEvent("DISPLAY_SIZE_CHANGED")
+        if C_EventUtils.IsEventValid("UI_SCALE_CHANGED") then self.watcher:RegisterEvent("UI_SCALE_CHANGED") end
+    end
     FNP.RefreshNameplateScale()
 end

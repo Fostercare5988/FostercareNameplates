@@ -15,6 +15,16 @@ local cache, cacheOrder, cacheCursor = {}, {}, 1
 local visible, ticker, driver, initialized
 local MAX_UNITS, MAX_SPELLS, MAX_CACHE = 128, 16, 256
 
+-- Read on apply and refresh; the 0.2 s tick only reads these.
+local opt = {}
+local function ReadSettings()
+    opt.targetOnly = FNP.GetOverride("nameplate_cd_target", 0) == 1
+    opt.minimum = FNP.GetNumber("nameplate_cd_minimum", 5, 5, 120)
+    opt.maximum = math.floor(FNP.GetNumber("nameplate_cd_count", 5, 1, 8))
+    opt.size = math.floor(FNP.GetNumber("nameplate_cd_size", 22, 14, 40))
+    opt.offset = FNP.GetNumber("nameplate_cd_offset", 8, 0, 60)
+end
+
 function CD:IsAvailable()
     if type(GetNampowerVersion) ~= "function" or type(GetSpellRecField) ~= "function"
         or type(GetSpellIconTexture) ~= "function" then return false end
@@ -50,7 +60,7 @@ local function HideRow(plate)
     if not row then return end
     for _, icon in ipairs(row.icons) do
         if icon.start then CooldownFrame_SetTimer(icon.sweep, 0, 0, 0) end
-        icon.start, icon.lastText = nil, nil
+        icon.start, icon.lastRemaining = nil, nil
         icon:Hide()
     end
     row:Hide()
@@ -78,17 +88,17 @@ local function Icon(row, index)
     return icon
 end
 
+-- validated: the tick already matched plate and GUID, and the unit passed the
+-- player and attackable checks when its row was first drawn.
 local function Draw(plate, guid, now, validated)
     local state = CD.states[guid]
     local row = plate.fnpEnemyCooldowns
-    if not state or not plate:IsShown() or (not validated and C_NamePlate.GetNamePlateForGUID(guid) ~= plate)
-        or (FNP.GetOverride("nameplate_cd_target", 0) == 1 and guid ~= UnitGUID("target"))
-        or not UnitIsPlayer(guid) or not UnitCanAttack("player", guid) then
+    if not state or not plate:IsShown() or (opt.targetOnly and guid ~= UnitGUID("target"))
+        or (not validated and (C_NamePlate.GetNamePlateForGUID(guid) ~= plate
+            or not UnitIsPlayer(guid) or not UnitCanAttack("player", guid))) then
         HideRow(plate); return
     end
-    local minimum = FNP.GetNumber("nameplate_cd_minimum", 5, 5, 120)
-    local maximum = math.floor(FNP.GetNumber("nameplate_cd_count", 5, 1, 8))
-    local size = math.floor(FNP.GetNumber("nameplate_cd_size", 22, 14, 40))
+    local minimum, maximum, size = opt.minimum, opt.maximum, opt.size
     local count = 0
     for _, entry in ipairs(state.spells) do
         if entry.ends > now and entry.data.duration >= minimum and count < maximum then
@@ -110,8 +120,10 @@ local function Draw(plate, guid, now, validated)
                 CooldownFrame_SetTimer(icon.sweep, entry.start, entry.data.duration, 1)
             end
             local remaining = math.ceil(entry.ends - now)
-            local text = "~" .. (remaining >= 60 and (math.ceil(remaining / 60) .. "m") or tostring(remaining))
-            if icon.lastText ~= text then icon.lastText = text; icon.text:SetText(text) end
+            if icon.lastRemaining ~= remaining then
+                icon.lastRemaining = remaining
+                icon.text:SetText("~" .. (remaining >= 60 and (math.ceil(remaining / 60) .. "m") or tostring(remaining)))
+            end
             if not icon:IsShown() then icon:Show() end
         end
     end
@@ -120,17 +132,21 @@ local function Draw(plate, guid, now, validated)
     for i = count + 1, #row.icons do
         local icon = row.icons[i]
         if icon.start then CooldownFrame_SetTimer(icon.sweep, 0, 0, 0) end
-        icon.start, icon.lastText = nil, nil; icon:Hide()
+        icon.start, icon.lastRemaining = nil, nil; icon:Hide()
     end
-    local width, offset = count * (size + 3) - 3, FNP.GetNumber("nameplate_cd_offset", 8, 0, 60)
+    -- Aura and target changes lay the row out themselves; here only a new,
+    -- re-shown or resized row needs it.
+    local width, offset = count * (size + 3) - 3, opt.offset
+    local layout = not row:IsShown()
     if row.width ~= width or row.size ~= size or row.offset ~= offset then
         row.width, row.size, row.offset = width, size, offset
         row:SetWidth(width); row:SetHeight(size)
         if not FNP.Nameplates then
             row:ClearAllPoints(); row:SetPoint("BOTTOM", plate.name or plate, "TOP", 0, offset + 6)
         end
+        layout = true
     end
-    if FNP.Nameplates then FNP.Nameplates:LayoutExtras(plate) end
+    if layout and FNP.Nameplates then FNP.Nameplates:LayoutExtras(plate) end
     if not row:IsShown() then row:Show() end
 end
 
@@ -153,7 +169,7 @@ local function Tick()
 end
 
 function CD:Refresh()
-    if self.enabled then Tick() end
+    if self.enabled then ReadSettings(); Tick() end
 end
 
 function CD:Observe(unit, id)
@@ -202,6 +218,7 @@ function CD:ApplyConfiguration()
         return
     end
     visible = visible or {}
+    ReadSettings()
     for _, ev in ipairs({ "UNIT_CASTEVENT", "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "PLAYER_ENTERING_WORLD",
         "PLAYER_TARGET_CHANGED", "ADDON_LOADED" }) do
         driver:RegisterEvent(ev)
