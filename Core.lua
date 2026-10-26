@@ -49,8 +49,8 @@ end
 local frame = CreateFrame("Frame", "FNPInitialize", UIParent)
 frame:RegisterEvent("VARIABLES_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
-frame:SetScript("OnEvent", function(...)
-    local ev = FNP.EventArgs(...)
+frame:SetScript("OnEvent", function(a1, a2)
+    local ev = FNP.EventArgs(a1, a2)
     if ev == "VARIABLES_LOADED" or ev == "PLAYER_LOGIN" then
         FNP:Initialize()
         frame:UnregisterAllEvents()

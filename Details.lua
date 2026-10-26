@@ -265,36 +265,43 @@ local function TickAuras()
     StopTimer()
 end
 
+-- The row being filled. File-level state instead of a closure per update.
+local auraPlate, auraRow, auraCount, auraNow
+
+local function AddAura(name, texture, stacks, dispel, duration, expires, source, stealable, personal, id)
+    if not name or not texture or (expires and expires > 0 and expires <= auraNow) then return end
+    local size, row = NP.settings.auraSize, auraRow
+    if not row then
+        row = CreateFrame("Frame", nil, auraPlate); row:EnableMouse(false); row.icons = {}
+        auraPlate.fnpAuras, auraRow = row, row
+    end
+    auraCount = auraCount + 1
+    local icon = AuraIcon(row, auraCount)
+    if icon.size ~= size then
+        icon.size = size; icon:SetWidth(size); icon:SetHeight(size)
+        icon:ClearAllPoints(); icon:SetPoint("LEFT", row, "LEFT", (auraCount - 1) * (size + 3), 0)
+    end
+    if icon.textureID ~= texture then icon.textureID = texture; icon.texture:SetTexture(texture) end
+    Text(icon.count, stacks and stacks > 1 and tostring(stacks) or "")
+    icon.ends = duration and duration > 0 and expires and expires > auraNow and expires or nil
+    if icon.ends then NP.timed[auraPlate] = true end
+    local remaining = icon.ends and math.ceil(icon.ends - auraNow)
+    Text(icon.time, remaining and (remaining >= 60 and (math.ceil(remaining / 60) .. "m") or tostring(remaining)) or "")
+    Visible(icon, true)
+    return id
+end
+
 function NP:Auras(plate, unit)
     local s = self.settings
     if not unit or not UnitCanAttack("player", unit) or (not s.own and not s.cc and not s.buffs) then
         HideAuras(plate); self:LayoutExtras(plate); return
     end
-    local row, count, ccID, now = plate.fnpAuras, 0, nil, GetTime()
+    local ccID
+    auraPlate, auraRow, auraCount, auraNow = plate, plate.fnpAuras, 0, GetTime()
     self.timed[plate] = nil
-    local function Add(name, texture, stacks, dispel, duration, expires, source, stealable, personal, id)
-        if not name or not texture or (expires and expires > 0 and expires <= now) then return end
-        if not row then
-            row = CreateFrame("Frame", nil, plate); row:EnableMouse(false); row.icons = {}; plate.fnpAuras = row
-        end
-        count = count + 1
-        local icon = AuraIcon(row, count)
-        if icon.size ~= s.auraSize then
-            icon.size = s.auraSize; icon:SetWidth(s.auraSize); icon:SetHeight(s.auraSize)
-            icon:ClearAllPoints(); icon:SetPoint("LEFT", row, "LEFT", (count - 1) * (s.auraSize + 3), 0)
-        end
-        if icon.textureID ~= texture then icon.textureID = texture; icon.texture:SetTexture(texture) end
-        Text(icon.count, stacks and stacks > 1 and tostring(stacks) or "")
-        icon.ends = duration and duration > 0 and expires and expires > now and expires or nil
-        if icon.ends then NP.timed[plate] = true end
-        local remaining = icon.ends and math.ceil(icon.ends - now)
-        Text(icon.time, remaining and (remaining >= 60 and (math.ceil(remaining / 60) .. "m") or tostring(remaining)) or "")
-        Visible(icon, true)
-        return id
-    end
     -- Engine filters classify CC and caster identity; no spell lists, combat-log
     -- inference or tooltip parsing. Query only enough results for the capped row.
-    if s.cc then ccID = Add(C_UnitAuras.UnitAura(unit, 1, "HARMFUL|CROWD_CONTROL")) end
+    if s.cc then ccID = AddAura(C_UnitAuras.UnitAura(unit, 1, "HARMFUL|CROWD_CONTROL")) end
     if s.own then
         -- One aura-array walk; by-index getters re-walk from the start per call.
         local _, total = C_UnitAuras.GetAuraSlots(unit, "HARMFUL|PLAYER", nil, nil, auraSlots)
@@ -303,13 +310,15 @@ function NP:Auras(plate, unit)
             if own >= s.auraCount then break end
             local name, texture, stacks, dispel, duration, expires, source, stealable, personal, id = C_UnitAuras.UnitAuraBySlot(unit, auraSlots[i])
             if name and (not ccID or id ~= ccID) then
-                local before = count
-                Add(name, texture, stacks, dispel, duration, expires, source, stealable, personal, id)
-                if count > before then own = own + 1 end
+                local before = auraCount
+                AddAura(name, texture, stacks, dispel, duration, expires, source, stealable, personal, id)
+                if auraCount > before then own = own + 1 end
             end
         end
     end
-    if s.buffs then for i = 1, 2 do Add(C_UnitAuras.UnitAura(unit, i, "HELPFUL")) end end
+    if s.buffs then for i = 1, 2 do AddAura(C_UnitAuras.UnitAura(unit, i, "HELPFUL")) end end
+    local row, count = auraRow, auraCount
+    auraPlate, auraRow = nil, nil
     if row then
         for i = count + 1, #row.icons do
             local icon = row.icons[i]; icon.ends = nil; Visible(icon, false)
@@ -363,28 +372,33 @@ function NP:Targeting(plate, unit, recheck)
     if label then Visible(label, show) end
 end
 
+-- Queued work per plate is a sum of these bits, and two pending tables take
+-- turns, so health and aura bursts build no tables.
+local KIND_BIT = { health = 1, level = 2, auras = 4, targeting = 8 }
+local spare = {}
+
 local function Flush()
     queued = nil
-    local pending = NP.pending; NP.pending = {}
-    if not NP.active then return end
+    local pending = NP.pending
+    NP.pending, spare = spare, pending
     for plate, flags in pairs(pending) do
-        local unit = plate:IsShown() and FNP.GetNameplateUnit(plate)
+        pending[plate] = nil
+        local unit = NP.active and plate:IsShown() and FNP.GetNameplateUnit(plate)
         if unit then
             plate.fnpNeedsDetails = nil
-            if flags.health then NP:Health(plate, unit) end
-            if flags.level then NP:Level(plate, unit) end
-            if flags.auras then NP:Auras(plate, unit) end
-            if flags.targeting then NP:Targeting(plate, unit, true) end
-        else Clear(plate) end
+            if flags % 2 == 1 then NP:Health(plate, unit) end
+            if flags % 4 >= 2 then NP:Level(plate, unit) end
+            if flags % 8 >= 4 then NP:Auras(plate, unit) end
+            if flags >= 8 then NP:Targeting(plate, unit, true) end
+        elseif NP.active then Clear(plate) end
     end
 end
 
 function NP:Queue(plate, kind)
     if not self.active or not plate then return end
     if not plate:IsShown() then plate.fnpNeedsDetails = true; return end
-    local flags = self.pending[plate]
-    if not flags then flags = {}; self.pending[plate] = flags end
-    flags[kind] = true
+    local flags, bit = self.pending[plate] or 0, KIND_BIT[kind]
+    if flags % (bit * 2) < bit then self.pending[plate] = flags + bit end
     if not queued then queued = true; C_Timer.After(0, Flush) end
 end
 

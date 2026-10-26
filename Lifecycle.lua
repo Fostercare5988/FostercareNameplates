@@ -2,7 +2,6 @@ local FNP = FostercareNameplates
 if not FNP then return end
 
 -- Nameplate lifecycle and verified GUID bindings.
-local NAMEPLATE_OBJECTORDER = { "border", "glow", "name", "level", "levelicon", "raidicon", "dragon" }
 
 -- Snapshot the master choice before plate discovery. Changing it requires a
 -- restart so disabling never leaves a partly initialized plate subsystem.
@@ -48,10 +47,10 @@ local function InitPlate(plate, unit)
 
     if unit then plate.fnpUnitGUID = UnitGUID(unit) end
     plate.healthbar = plate:GetChildren()
-    FNP.ForEachRegion(plate, function(region, index)
-        local key = NAMEPLATE_OBJECTORDER[index]
-        if key then plate[key] = region end
-    end)
+    -- Native region order: border, glow, name, level, level icon, raid icon, dragon.
+    local r1, r2, r3, r4, r5, r6, r7 = plate:GetRegions()
+    plate.border, plate.glow, plate.name, plate.level = r1, r2, r3, r4
+    plate.levelicon, plate.raidicon, plate.dragon = r5, r6, r7
 
     for _, func in ipairs(libnameplate.OnInit) do
         func(plate)
