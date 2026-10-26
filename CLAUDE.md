@@ -2,7 +2,7 @@
 
 Nameplate features: health and auras, cast bars, class colors, scaling, enemy
 cooldowns. Player guide: `docs/USER_GUIDE.md`. Regression tests:
-`regressions/FostercareNameplates` in VanillaForge (33 tests).
+`regressions/FostercareNameplates` in VanillaForge (42 tests).
 
 | File | Job |
 | --- | --- |
@@ -35,3 +35,9 @@ Things to know:
   To change how a native part looks, hide it by alpha and draw our own, like
   the level (`NP:Level`, setting `nameplate_level`; `PlaceLevel` centers it in
   the border's oval).
+- No `...` in handlers or helpers on per-frame or event paths: in the client's
+  Lua 5.0 each call builds an `arg` table, and the plate OnUpdate wrapper made
+  about 320 KB/s at 40 plates (fixed in 1.4.3, KNOWN_PATTERNS KP-58).
+- Unit events fire once per token naming the unit; Details and Castbars act on the
+  `nameplateN` one only. A unit's target has no event in 1.12: "Targeting you" is
+  asked every 0.2 s from Render.

@@ -430,8 +430,12 @@ local function FixedFade(unit)
     if s.fadeCritters and kind == CRITTER then return true end
     if s.fadeTotems and kind == TOTEM then return true end
     if s.fadePets and UnitIsOtherPlayersPet(unit) then return true end
-    -- UNVERIFIED: test in game that UnitIsTrivial marks grey-level mobs on OctoWoW.
-    if s.fadeTrivial and UnitIsTrivial(unit) then return true end
+    -- Grey by the stock rule (GetDifficultyColor, QuestLogFrame.lua): more
+    -- levels below you than the green range. Skull levels never fade.
+    if s.fadeTrivial then
+        local level = UnitLevel(unit) or 0
+        if level > 0 and UnitLevel("player") - level > GetQuestGreenRange() then return true end
+    end
     return false
 end
 
