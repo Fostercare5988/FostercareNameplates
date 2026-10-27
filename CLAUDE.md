@@ -6,7 +6,7 @@ cooldowns. Player guide: `docs/USER_GUIDE.md`. Regression tests:
 
 | File | Job |
 | --- | --- |
-| `ClassicAPIRequirement.lua` | Stops loading without ClassicAPI 1.17.10+ |
+| `ClassicAPIRequirement.lua` | Stops loading without ClassicAPI 1.17.11+ |
 | `Core.lua` | Module registry and settings |
 | `Helpers.lua` | Event and script helpers (`FNP.SetEventHandler`, `FNP.HookScript`) |
 | `Lifecycle.lua` | Finds plates and binds them to unit GUIDs (`C_NamePlate`) |
