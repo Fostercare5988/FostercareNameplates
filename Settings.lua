@@ -277,3 +277,19 @@ RefreshPreview = function()
     Shown(cast, FNP.IsEnabled("Nameplate Castbar"))
     Shown(glow, detail and FNP.GetOverride("nameplate_target_glow", 0) == 1)
 end
+
+-- Game Menu > AddOn Options > FostercareNameplates (ClassicAPI).
+local entry = CreateFrame("Frame", "FostercareNameplatesOptionsEntry")
+entry.name = "FostercareNameplates"
+local entryTitle = entry:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+entryTitle:SetPoint("TOPLEFT", entry, "TOPLEFT", 16, -16)
+entryTitle:SetText("FostercareNameplates")
+local entryText = entry:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+entryText:SetPoint("TOPLEFT", entryTitle, "BOTTOMLEFT", 0, -8)
+entryText:SetText("Settings open in their own window. Type /fnp to open them at any time.")
+UI.Select(UI.Button("FostercareNameplatesOptionsOpen", entry, "Open settings", 16, -70, 172, function()
+    if InterfaceOptionsFrame and InterfaceOptionsFrame:IsShown() then InterfaceOptionsFrame:Hide() end
+    if GameMenuFrame and GameMenuFrame:IsShown() then HideUIPanel(GameMenuFrame) end
+    panel:Show()
+end), true)
+InterfaceOptions_AddCategory(entry)
