@@ -19,7 +19,7 @@ local lib = FNP.libnameplate
 local ticker, queued, driver
 local auraSlots = {}
 local DETAIL_EVENTS = { "PLAYER_TARGET_CHANGED", "PLAYER_COMBO_POINTS", "UNIT_HEALTH", "UNIT_MAXHEALTH",
-    "UNIT_AURA", "UNIT_FACTION", "UNIT_LEVEL", "RAID_TARGET_UPDATE", "PLAYER_ENTERING_WORLD", "ADDON_LOADED" }
+    "UNIT_AURA_DELTA", "UNIT_FACTION", "UNIT_LEVEL", "RAID_TARGET_UPDATE", "PLAYER_ENTERING_WORLD", "ADDON_LOADED" }
 -- 1.12 has no event for a unit changing its target (the stock target-of-target
 -- frame polls in OnUpdate), so Render asks again on this cadence.
 local TARGETING_INTERVAL = 0.2
@@ -282,6 +282,7 @@ local function AddAura(name, texture, stacks, dispel, duration, expires, source,
         icon:ClearAllPoints(); icon:SetPoint("LEFT", row, "LEFT", (auraCount - 1) * (size + 3), 0)
     end
     if icon.textureID ~= texture then icon.textureID = texture; icon.texture:SetTexture(texture) end
+    icon.spellID = id
     Text(icon.count, stacks and stacks > 1 and tostring(stacks) or "")
     icon.ends = duration and duration > 0 and expires and expires > auraNow and expires or nil
     if icon.ends then NP.timed[auraPlate] = true end
@@ -302,9 +303,11 @@ function NP:Auras(plate, unit)
     -- Engine filters classify CC and caster identity; no spell lists, combat-log
     -- inference or tooltip parsing. Query only enough results for the capped row.
     if s.cc then ccID = AddAura(C_UnitAuras.UnitAura(unit, 1, "HARMFUL|CROWD_CONTROL")) end
+    plate.fnpCCID, plate.fnpOwnTotal = ccID, nil
     if s.own then
         -- One aura-array walk; by-index getters re-walk from the start per call.
         local _, total = C_UnitAuras.GetAuraSlots(unit, "HARMFUL|PLAYER", nil, nil, auraSlots)
+        plate.fnpOwnTotal = total
         local own = 0
         for i = 1, total or 0 do
             if own >= s.auraCount then break end
@@ -316,7 +319,11 @@ function NP:Auras(plate, unit)
             end
         end
     end
-    if s.buffs then for i = 1, 2 do AddAura(C_UnitAuras.UnitAura(unit, i, "HELPFUL")) end end
+    plate.fnpBuff1, plate.fnpBuff2 = nil, nil
+    if s.buffs then
+        plate.fnpBuff1 = AddAura(C_UnitAuras.UnitAura(unit, 1, "HELPFUL"))
+        plate.fnpBuff2 = AddAura(C_UnitAuras.UnitAura(unit, 2, "HELPFUL"))
+    end
     local row, count = auraRow, auraCount
     auraPlate, auraRow = nil, nil
     if row then
@@ -331,6 +338,33 @@ function NP:Auras(plate, unit)
     if next(self.timed) then
         if not ticker then ticker = C_Timer.NewTicker(0.2, TickAuras) end
     else StopTimer() end
+end
+
+-- ClassicAPI 1.17.10 UNIT_AURA_DELTA lists the aura instances that changed. A
+-- refresh redraws the row only when the row shows that spell; a new or lost
+-- aura only when the row's inputs moved: your debuff count, the first crowd
+-- control, the first two buffs. Another player's debuff on an enemy in a
+-- battleground costs a few engine reads, not a row rebuild.
+local deltaAura = {}
+function NP:AuraDeltaShows(plate, unit, info)
+    if info.isFullUpdate then return true end
+    local updated, row = info.updatedAuraInstanceIDs, plate.fnpAuras
+    if updated and row then
+        for i = 1, #updated do
+            local d = C_UnitAuras.GetAuraDataByAuraInstanceID(unit, updated[i], deltaAura)
+            if d then
+                for _, icon in ipairs(row.icons) do
+                    if icon.spellID == d.spellId and icon:IsShown() then return true end
+                end
+            end
+        end
+    end
+    if not info.addedAuraInstanceIDs and not info.removedAuraInstanceIDs then return false end
+    local s = self.settings
+    if s.own and plate.fnpOwnTotal ~= select(2, C_UnitAuras.GetAuraSlots(unit, "HARMFUL|PLAYER", nil, nil, auraSlots)) then return true end
+    if s.cc and plate.fnpCCID ~= select(10, C_UnitAuras.UnitAura(unit, 1, "HARMFUL|CROWD_CONTROL")) then return true end
+    return s.buffs and (plate.fnpBuff1 ~= select(10, C_UnitAuras.UnitAura(unit, 1, "HELPFUL"))
+        or plate.fnpBuff2 ~= select(10, C_UnitAuras.UnitAura(unit, 2, "HELPFUL"))) or false
 end
 
 function NP:Combo(plate)
@@ -561,7 +595,7 @@ end
 module.enable = function(self)
     if not driver then
         driver = CreateFrame("Frame", "FNPNameplateDetailsEvents")
-        FNP.SetEventHandler(driver, function(_, ev, unit)
+        FNP.SetEventHandler(driver, function(_, ev, unit, info)
             if ev == "ADDON_LOADED" then
                 if NP.active and not FNP.OwnsNameplates() then
                     NP:ApplyConfiguration()
@@ -588,12 +622,14 @@ module.enable = function(self)
                     if plate and lib.plates[plate] then NP:Queue(plate, "auras"); NP:Queue(plate, "targeting") end
                     return
                 end
-                local kind = ev == "UNIT_AURA" and "auras" or (ev == "UNIT_LEVEL" and "level" or "health")
+                local kind = ev == "UNIT_AURA_DELTA" and "auras" or (ev == "UNIT_LEVEL" and "level" or "health")
                 if (kind == "level" and not NP.settings.level) or (kind == "auras" and not NP.settings.own and not NP.settings.cc and not NP.settings.buffs)
                     or (kind == "health" and NP.settings.health == 0) then return end
                 local plate = C_NamePlate.GetNamePlateForUnit(unit)
                 if plate and lib.plates[plate] then
-                    if kind ~= "health" or not NP.settings.healthTarget or plate.fnpIsTarget then NP:Queue(plate, kind) end
+                    if kind == "auras" then
+                        if NP:AuraDeltaShows(plate, unit, info) then NP:Queue(plate, kind) end
+                    elseif kind ~= "health" or not NP.settings.healthTarget or plate.fnpIsTarget then NP:Queue(plate, kind) end
                 end
             end
         end)

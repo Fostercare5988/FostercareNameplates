@@ -59,7 +59,7 @@ local function HideRow(plate)
     local row = plate.fnpEnemyCooldowns
     if not row then return end
     for _, icon in ipairs(row.icons) do
-        if icon.start then CooldownFrame_SetTimer(icon.sweep, 0, 0, 0) end
+        if icon.start then icon.sweep:Clear() end
         icon.start, icon.lastRemaining = nil, nil
         icon:Hide()
     end
@@ -77,6 +77,8 @@ local function Icon(row, index)
     icon.sweep = CreateFrame("Cooldown", nil, icon, "CooldownFrameTemplate")
     icon.sweep:SetAllPoints(icon)
     icon.sweep.noCooldownCount = true
+    -- The "~" estimate below is ours; native numbers would print over it.
+    icon.sweep:SetHideCountdownNumbers(true)
     icon.textFrame = CreateFrame("Frame", nil, icon)
     icon.textFrame:SetAllPoints(icon)
     icon.textFrame:SetFrameLevel(icon.sweep:GetFrameLevel() + 2)
@@ -117,7 +119,7 @@ local function Draw(plate, guid, now, validated)
             if icon.start ~= entry.start or icon.spellID ~= entry.id then
                 icon.start, icon.spellID = entry.start, entry.id
                 icon.texture:SetTexture(entry.data.texture)
-                CooldownFrame_SetTimer(icon.sweep, entry.start, entry.data.duration, 1)
+                icon.sweep:SetCooldown(entry.start, entry.data.duration)
             end
             local remaining = math.ceil(entry.ends - now)
             if icon.lastRemaining ~= remaining then
@@ -131,7 +133,7 @@ local function Draw(plate, guid, now, validated)
     row.guid = guid
     for i = count + 1, #row.icons do
         local icon = row.icons[i]
-        if icon.start then CooldownFrame_SetTimer(icon.sweep, 0, 0, 0) end
+        if icon.start then icon.sweep:Clear() end
         icon.start, icon.lastRemaining = nil, nil; icon:Hide()
     end
     -- Aura and target changes lay the row out themselves; here only a new,
