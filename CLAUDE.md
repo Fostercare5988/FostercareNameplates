@@ -2,11 +2,11 @@
 
 Nameplate features: health and auras, cast bars, class colors, scaling, enemy
 cooldowns. Player guide: `docs/USER_GUIDE.md`. Regression tests:
-`regressions/FostercareNameplates` in VanillaForge (42 tests).
+`regressions/FostercareNameplates` in VanillaForge (50 tests).
 
 | File | Job |
 | --- | --- |
-| `ClassicAPIRequirement.lua` | Stops loading without ClassicAPI 1.17.7+ |
+| `ClassicAPIRequirement.lua` | Stops loading without ClassicAPI 1.17.10+ |
 | `Core.lua` | Module registry and settings |
 | `Helpers.lua` | Event and script helpers (`FNP.SetEventHandler`, `FNP.HookScript`) |
 | `Lifecycle.lua` | Finds plates and binds them to unit GUIDs (`C_NamePlate`) |
@@ -41,3 +41,9 @@ Things to know:
 - Unit events fire once per token naming the unit; Details and Castbars act on the
   `nameplateN` one only. A unit's target has no event in 1.12: "Targeting you" is
   asked every 0.2 s from Render.
+- Plate auras follow ClassicAPI's `UNIT_AURA_DELTA` (1.17.10): `NP:AuraDeltaShows`
+  queues a row rebuild only when a refreshed spell is on the row or a new or lost
+  aura moves its inputs (own debuff count, first crowd control, first two buffs),
+  so other players' debuffs on an enemy cost no rebuild.
+- Cooldown icons keep their own "~" text and call `SetHideCountdownNumbers(true)`,
+  so the player's `countdownForCooldowns` CVar never doubles them.
