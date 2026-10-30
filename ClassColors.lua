@@ -24,11 +24,12 @@ module.enable = function()
             if not active or not plate.healthbar then return end
             if unit ~= plate.fnpClassUnit or not plate.fnpNextClassQuery or now >= plate.fnpNextClassQuery then
                 local class
-                if unit and UnitIsPlayer(unit) then local localized; localized, class = UnitClass(unit) end
+                local isPlayer = unit and UnitIsPlayer(unit)
+                if isPlayer then local localized; localized, class = UnitClass(unit) end
                 plate.fnpClassUnit, plate.fnpCachedClass = unit, class
-                -- A class cannot change for a GUID. Retry unresolved identities
-                -- slowly; avoid recurring class/name/level queries once known.
-                plate.fnpNextClassQuery = class and math.huge or now + 0.5
+                -- A GUID is a player or it is not, and a player's class never
+                -- changes: ask once. Only a plate with no unit yet is retried.
+                plate.fnpNextClassQuery = (class or (unit and not isPlayer)) and math.huge or now + 0.5
             end
             local class = plate.fnpCachedClass
             local color = class and RAID_CLASS_COLORS[class]
