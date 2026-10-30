@@ -221,16 +221,22 @@ function CD:ApplyConfiguration()
     end
     visible = visible or {}
     ReadSettings()
-    for _, ev in ipairs({ "UNIT_CASTEVENT", "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "PLAYER_ENTERING_WORLD",
+    -- NamPower's cast events for other casters; SuperWoW's UNIT_CASTEVENT would also
+    -- call us on every melee swing nearby.
+    for _, ev in ipairs({ "SPELL_GO_OTHER", "SPELL_START_OTHER", "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "PLAYER_ENTERING_WORLD",
         "PLAYER_TARGET_CHANGED", "ADDON_LOADED" }) do
         driver:RegisterEvent(ev)
     end
-    FNP.SetEventHandler(driver, function(_, ev, unit, target, kind, id)
+    FNP.SetEventHandler(driver, function(_, ev, unit, id, caster, _, _, _, _, spellType)
         if ev == "ADDON_LOADED" then
             if not FNP.OwnsNameplates() then CD:ApplyConfiguration() end
         elseif ev == "PLAYER_TARGET_CHANGED" then CD:Refresh()
-        elseif ev == "UNIT_CASTEVENT" then
-            if kind == "CAST" or kind == "CHANNEL" then CD:Observe(unit, id) end
+        elseif ev == "SPELL_GO_OTHER" then
+            -- itemId, spellId, casterGuid
+            CD:Observe(caster, id)
+        elseif ev == "SPELL_START_OTHER" then
+            -- itemId, spellId, casterGuid, ..., spellType (1 = channel)
+            if spellType == 1 then CD:Observe(caster, id) end
         elseif ev == "NAME_PLATE_UNIT_ADDED" then
             local guid = unit and UnitGUID(unit)
             local plate = guid and C_NamePlate.GetNamePlateForUnit(unit)
