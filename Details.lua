@@ -13,10 +13,10 @@ local defaults = { nameplate_marks = 1, nameplate_raidmark_size = 20,
     nameplate_fade_trivial = 0, nameplate_fade_neutral = 0, nameplate_fade_alpha = 0.3 }
 local module = FNP:register({ title = "Nameplate Details", category = "Nameplates", enabled = true,
     description = "Native raid marks, target emphasis, health, auras and combo points.", config = defaults })
-local NP = { pending = {}, timed = {}, settings = {} }
+local NP = { pending = {}, settings = {} }
 FNP.Nameplates = NP
 local lib = FNP.libnameplate
-local ticker, queued, driver
+local queued, driver
 local auraSlots = {}
 local DETAIL_EVENTS = { "PLAYER_TARGET_CHANGED", "PLAYER_COMBO_POINTS", "UNIT_HEALTH", "UNIT_MAXHEALTH",
     "UNIT_AURA_DELTA", "UNIT_FACTION", "UNIT_LEVEL", "RAID_TARGET_UPDATE", "PLAYER_ENTERING_WORLD", "ADDON_LOADED" }
@@ -43,19 +43,13 @@ local function Text(object, value)
     if object.fnpText ~= value then object.fnpText = value; object:SetText(value) end
 end
 
-local function StopTimer()
-    if ticker and not next(NP.timed) then ticker:Cancel(); ticker = nil end
-end
-
 local function HideAuras(plate)
-    NP.timed[plate] = nil
     local row = plate.fnpAuras
     if not row then return end
     for _, icon in ipairs(row.icons) do
-        icon.ends = nil; Visible(icon, false)
+        icon.cdStart = nil; icon.sweep:Clear(); Visible(icon, false)
     end
     Visible(row, false); plate.fnpAuraHeight = 0
-    StopTimer()
 end
 
 local function Clear(plate)
@@ -222,38 +216,24 @@ local function AuraIcon(row, index)
     icon = CreateFrame("Frame", nil, row); icon:EnableMouse(false)
     icon.texture = icon:CreateTexture(nil, "ARTWORK"); icon.texture:SetAllPoints(icon)
     icon.texture:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-    icon.time = icon:CreateFontString(nil, "OVERLAY"); icon.time:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
-    icon.time:SetPoint("BOTTOM", icon, "BOTTOM", 0, -1)
+    -- The client counts the time down (countdownForCooldowns CVar 1): whole
+    -- seconds, then minutes from 60 s. No sweep, no flash; only the number.
+    local sweep = CreateFrame("Cooldown", nil, icon, "CooldownFrameTemplate")
+    sweep:SetAllPoints(icon); sweep:EnableMouse(false)
+    sweep:SetDrawSwipe(false); sweep:SetDrawBling(false); sweep:SetCountdownAbbrevThreshold(60)
+    local number = sweep:GetCountdownFontString()
+    number:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
+    number:ClearAllPoints(); number:SetPoint("BOTTOM", icon, "BOTTOM", 0, -1)
+    -- An aura that ran out: draw the row again without it.
+    sweep:SetScript("OnCooldownDone", function()
+        local owner = this.owner
+        owner.cdStart = nil; Visible(owner, false); NP:Queue(owner.plate, "auras")
+    end)
+    sweep.owner, icon.sweep = icon, sweep
     icon.count = icon:CreateFontString(nil, "OVERLAY"); icon.count:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
     icon.count:SetPoint("TOPRIGHT", icon, "TOPRIGHT", 1, 1)
     row.icons[index] = icon
     return icon
-end
-
-local function TickAuras()
-    if not NP.active then return end
-    local now = GetTime()
-    for plate in pairs(NP.timed) do
-        if not plate:IsShown() or not FNP.GetNameplateUnit(plate) then
-            HideAuras(plate)
-            plate.fnpNeedsDetails = true
-        else
-            local active
-            for _, icon in ipairs(plate.fnpAuras.icons) do
-                if icon.ends then
-                    if icon.ends <= now then
-                        icon.ends = nil; Visible(icon, false); NP:Queue(plate, "auras")
-                    else
-                        active = true
-                        local remaining = math.ceil(icon.ends - now)
-                        Text(icon.time, remaining >= 60 and (math.ceil(remaining / 60) .. "m") or tostring(remaining))
-                    end
-                end
-            end
-            if not active then NP.timed[plate] = nil end
-        end
-    end
-    StopTimer()
 end
 
 -- The row being filled. File-level state instead of a closure per update.
@@ -275,10 +255,14 @@ local function AddAura(name, texture, stacks, dispel, duration, expires, source,
     if icon.textureID ~= texture then icon.textureID = texture; icon.texture:SetTexture(texture) end
     icon.spellID = id
     Text(icon.count, stacks and stacks > 1 and tostring(stacks) or "")
-    icon.ends = duration and duration > 0 and expires and expires > auraNow and expires or nil
-    if icon.ends then NP.timed[auraPlate] = true end
-    local remaining = icon.ends and math.ceil(icon.ends - auraNow)
-    Text(icon.time, remaining and (remaining >= 60 and (math.ceil(remaining / 60) .. "m") or tostring(remaining)) or "")
+    icon.plate = auraPlate
+    if duration and duration > 0 and expires and expires > auraNow then
+        local start = expires - duration
+        if icon.cdStart ~= start or icon.cdDuration ~= duration then
+            icon.cdStart, icon.cdDuration = start, duration
+            icon.sweep:SetCooldown(start, duration)
+        end
+    elseif icon.cdStart then icon.cdStart = nil; icon.sweep:Clear() end
     Visible(icon, true)
     return id
 end
@@ -290,7 +274,6 @@ function NP:Auras(plate, unit)
     end
     local ccID
     auraPlate, auraRow, auraCount, auraNow = plate, plate.fnpAuras, 0, GetTime()
-    self.timed[plate] = nil
     -- Engine filters classify CC and caster identity; no spell lists, combat-log
     -- inference or tooltip parsing. Query only enough results for the capped row.
     if s.cc then ccID = AddAura(C_UnitAuras.UnitAura(unit, 1, "HARMFUL|CROWD_CONTROL")) end
@@ -319,16 +302,13 @@ function NP:Auras(plate, unit)
     auraPlate, auraRow = nil, nil
     if row then
         for i = count + 1, #row.icons do
-            local icon = row.icons[i]; icon.ends = nil; Visible(icon, false)
+            local icon = row.icons[i]; icon.cdStart = nil; icon.sweep:Clear(); Visible(icon, false)
         end
         row:SetWidth(math.max(1, count * (s.auraSize + 3) - 3)); row:SetHeight(s.auraSize)
         Visible(row, count > 0)
     end
     plate.fnpAuraHeight = count > 0 and s.auraSize + 5 or 0
     self:LayoutExtras(plate)
-    if next(self.timed) then
-        if not ticker then ticker = C_Timer.NewTicker(0.2, TickAuras) end
-    else StopTimer() end
 end
 
 -- ClassicAPI 1.17.10 UNIT_AURA_DELTA lists the aura instances that changed. A
@@ -520,8 +500,7 @@ end
 function NP:Shutdown()
     self.active = false
     if driver then driver:UnregisterAllEvents() end
-    if ticker then ticker:Cancel(); ticker = nil end
-    self.pending, self.timed = {}, {}
+    self.pending = {}
     self.targetPlate, self.targetGUID = nil, nil
 end
 
