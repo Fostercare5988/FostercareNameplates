@@ -20,9 +20,6 @@ local ticker, queued, driver
 local auraSlots = {}
 local DETAIL_EVENTS = { "PLAYER_TARGET_CHANGED", "PLAYER_COMBO_POINTS", "UNIT_HEALTH", "UNIT_MAXHEALTH",
     "UNIT_AURA_DELTA", "UNIT_FACTION", "UNIT_LEVEL", "RAID_TARGET_UPDATE", "PLAYER_ENTERING_WORLD", "ADDON_LOADED" }
--- 1.12 has no event for a unit changing its target (the stock target-of-target
--- frame polls in OnUpdate), so Render asks again on this cadence.
-local TARGETING_INTERVAL = 0.2
 
 function FNP.MigrateNameplateSettings()
     local cfg = FostercareNameplates_Config
@@ -482,7 +479,7 @@ end
 -- A plate that gets a unit is drawn at once. Hiding it first and drawing on
 -- the next frame made the health text flicker whenever a plate came back.
 local function Bind(plate, unit)
-    plate.fnpFixedFade, plate.fnpFadeAt, plate.fnpTargetingAt = nil, nil, nil
+    plate.fnpFixedFade, plate.fnpFadeAt = nil, nil
     if not unit then Clear(plate); plate.fnpDetailGUID = nil; return end
     NP.pending[plate], plate.fnpNeedsDetails, plate.fnpDetailGUID = nil, nil, unit
     NP:Select(plate, unit == NP.targetGUID)
@@ -506,10 +503,6 @@ local function Render(plate, unit, now)
     -- so compare with what the plate showed after our last write.
     if wanted ~= plate.fnpAlpha or plate:GetAlpha() ~= plate.fnpDrawnAlpha then
         plate:SetAlpha(wanted); plate.fnpAlpha, plate.fnpDrawnAlpha = wanted, plate:GetAlpha()
-    end
-    if NP.settings.targeting and unit and (not plate.fnpTargetingAt or now >= plate.fnpTargetingAt) then
-        plate.fnpTargetingAt = now + TARGETING_INTERVAL
-        NP:Targeting(plate, unit)
     end
     local glow = plate.fnpTargetGlow
     if selected and NP.settings.glow and not glow then
@@ -559,6 +552,10 @@ function NP:ApplyConfiguration(layoutOnly)
     s.auraCount = math.floor(FNP.GetNumber("nameplate_aura_count", 3, 1, 6))
     s.combo = FNP.GetOverride("nameplate_combo", 1) == 1
     s.targeting = FNP.GetOverride("nameplate_targeting", 0) == 1
+    -- UNIT_TARGET (ClassicAPI 1.18) says when an enemy turns to someone else.
+    if driver then
+        if self.active and s.targeting then driver:RegisterEvent("UNIT_TARGET") else driver:UnregisterEvent("UNIT_TARGET") end
+    end
     s.fadeCritters = FNP.GetOverride("nameplate_fade_critters", 0) == 1
     s.fadeTotems = FNP.GetOverride("nameplate_fade_totems", 0) == 1
     s.fadePets = FNP.GetOverride("nameplate_fade_pets", 0) == 1
@@ -611,6 +608,11 @@ module.enable = function(self)
                 -- ClassicAPI fires a unit event once per token (target, markN,
                 -- raidN, nameplateN); a plate's unit always gets the nameplateN one.
                 if not string.find(unit, "^nameplate") then return end
+                if ev == "UNIT_TARGET" then
+                    local plate = C_NamePlate.GetNamePlateForUnit(unit)
+                    if plate and lib.plates[plate] then NP:Queue(plate, "targeting") end
+                    return
+                end
                 if ev == "UNIT_FACTION" then
                     local plate = C_NamePlate.GetNamePlateForUnit(unit)
                     if plate and lib.plates[plate] then NP:Queue(plate, "auras"); NP:Queue(plate, "targeting") end
