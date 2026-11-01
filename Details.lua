@@ -162,12 +162,6 @@ function NP:LayoutExtras(plate)
     end
 end
 
-local function FormatHP(value)
-    if value >= 1000000 then return string.format("%.1fm", value / 1000000) end
-    if value >= 1000 then return string.format("%.1fk", value / 1000) end
-    return tostring(math.floor(value + 0.5))
-end
-
 function NP:Health(plate, unit)
     local show = self.settings.health > 0 and unit and (not self.settings.healthTarget or plate.fnpIsTarget)
     local label = plate.fnpHealth
@@ -182,7 +176,7 @@ function NP:Health(plate, unit)
     end
     local percent = math.floor(math.max(0, math.min(1, hp / maximum)) * 100 + 0.5) .. "%"
     local mode = self.settings.health
-    Text(label, mode == 1 and percent or (mode == 2 and FormatHP(hp) or FormatHP(hp) .. "  " .. percent))
+    Text(label, mode == 1 and percent or (mode == 2 and AbbreviateNumbers(hp) or AbbreviateNumbers(hp) .. "  " .. percent))
     FNP.SetNameplateFontSize(label, math.max(7, 9 * (plate.fnpVisualScale or 1)))
     Visible(label, true)
 end
