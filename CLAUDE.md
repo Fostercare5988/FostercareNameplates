@@ -39,8 +39,10 @@ Things to know:
   Lua 5.0 each call builds an `arg` table, and the plate OnUpdate wrapper made
   about 320 KB/s at 40 plates (fixed in 1.4.3, KNOWN_PATTERNS KP-58).
 - Unit events fire once per token naming the unit; Details and Castbars act on the
-  `nameplateN` one only. A unit's target has no event in 1.12: "Targeting you" is
-  asked every 0.2 s from Render.
+  `nameplateN` one only. "Targeting you" follows UNIT_TARGET (ClassicAPI 1.18),
+  registered only while that option is on. Aura timers are native Cooldown frames
+  (numbers only, threshold 60 s, `OnCooldownDone` redraws the row): they show while
+  the player's `countdownForCooldowns` CVar is 1 and need no timer.
 - Plate auras follow ClassicAPI's `UNIT_AURA_DELTA` (1.17.10): `NP:AuraDeltaShows`
   queues a row rebuild only when a refreshed spell is on the row or a new or lost
   aura moves its inputs (own debuff count, first crowd control, first two buffs),
