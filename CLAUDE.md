@@ -2,7 +2,7 @@
 
 Nameplate features: health and auras, cast bars, class colors, scaling, enemy
 cooldowns. Player guide: `docs/USER_GUIDE.md`. Regression tests:
-`regressions/FostercareNameplates` in VanillaForge (56 tests).
+`regressions/FostercareNameplates` in VanillaForge (68 tests).
 
 | File | Job |
 | --- | --- |
@@ -47,5 +47,12 @@ Things to know:
   queues a row rebuild only when a refreshed spell is on the row or a new or lost
   aura moves its inputs (own debuff count, first crowd control, first two buffs),
   so other players' debuffs on an enemy cost no rebuild.
+- Cast bars fill themselves: `SetTimerDuration` with one duration object per bar
+  (ClassicAPI 1.19), and the spark is anchored to the bar's texture. The plate
+  callback only re-queries every 0.1 s while casting (pushback fires no event on
+  other units) and every 1 s idle; it writes the bar only when the cast changes.
+- A plate's unit binding is owned by ADDED/REMOVED alone: a unit that moves to
+  another plate fires REMOVED (old frame) then ADDED (new frame) since 1.19. No
+  polling of the binding.
 - Cooldown icons keep their own "~" text and call `SetHideCountdownNumbers(true)`,
   so the player's `countdownForCooldowns` CVar never doubles them.

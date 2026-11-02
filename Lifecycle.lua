@@ -58,13 +58,9 @@ local function InitPlate(plate, unit)
 
     FNP.HookScript(plate, "OnUpdate", function(self)
         if not libnameplate.rendering or not FNP.OwnsNameplates() then return end
-        -- ADDED/REMOVED own the binding; recheck a pooled frame on a slow cadence
-        -- for all render consumers instead of every frame.
+        -- ADDED/REMOVED own the binding: a unit that moves to another plate
+        -- fires REMOVED for the old frame and ADDED for the new (ClassicAPI 1.19).
         local now = GetTime()
-        if not self.fnpNextBindCheck or now >= self.fnpNextBindCheck then
-            self.fnpNextBindCheck = now + 0.5
-            FNP.GetNameplateUnit(self)
-        end
         local unit = self.fnpUnitGUID
         for _, callback in ipairs(libnameplate.OnUpdate) do callback(self, unit, now) end
     end)
@@ -119,7 +115,9 @@ FNP.SetEventHandler(libnameplate, function(_, ev, a1)
     elseif ev == "NAME_PLATE_UNIT_REMOVED" and a1 then
         local unit = a1
         local plate = C_NamePlate.GetNamePlateForUnit(unit)
-        if plate and plate.fnpUnitGUID == UnitGUID(unit) then
+        -- REMOVED comes before ADDED, and the token still names the leaving
+        -- unit and plate during it.
+        if plate then
             plate.fnpUnitGUID = nil
             for _, callback in ipairs(libnameplate.OnRemoved) do callback(plate) end
         end
