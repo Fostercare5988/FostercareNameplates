@@ -82,6 +82,8 @@ module.enable = function(self)
         plate.fnpCastbar.spark:SetWidth(20)
         plate.fnpCastbar.spark:SetHeight(20)
         plate.fnpCastbar.spark:SetBlendMode("ADD")
+        plate.fnpCastbar.spark:SetPoint("CENTER", plate.fnpCastbar:GetStatusBarTexture(), "RIGHT", 0, 0)
+        plate.fnpCastbar.timer = C_DurationUtil.CreateDuration()
 
         plate.fnpCastbar.backdrop = CreateFrame("Frame", nil, plate.fnpCastbar)
         plate.fnpCastbar.backdrop:EnableMouse(false)
@@ -109,7 +111,7 @@ module.enable = function(self)
         local cb = plate.fnpCastbar
         if cb then
             cb:Hide()
-            cb.lastSpell, cb.lastMax, cb.lastTexture, cb.lastSparkX = nil, nil, nil, nil
+            cb.lastSpell, cb.lastTexture, cb.lastChannel, cb.endSec = nil, nil, nil, nil
             cb.lastInterruptible, cb.castUnit, cb.nextQuery = nil, nil, nil
         end
     end
@@ -119,25 +121,69 @@ module.enable = function(self)
     table.insert(libnameplate.OnAdded, Reset)
     table.insert(libnameplate.OnRemoved, Reset)
 
+    local function HideBar(cb)
+        if cb:IsShown() then cb:Hide() end
+        cb.lastSpell, cb.lastTexture, cb.lastInterruptible, cb.lastChannel = nil, nil, nil, nil
+        cb.endSec = nil
+    end
+
+    -- The bar fills itself from cb.timer (SetTimerDuration, ClassicAPI): the
+    -- spark rides the bar's texture, so nothing runs per frame while it casts.
+    -- Only a query (below) or the cast ending touches the bar.
+    local function Show(cb, cast, texture, startTime, endTime, notInterruptible, isChannel)
+        cb.endSec = endTime / 1000
+        cb.timer:SetTimeSpan(startTime / 1000, cb.endSec)
+        if cb.lastChannel ~= isChannel then
+            cb.lastChannel = isChannel
+            cb:SetTimerDuration(cb.timer, Enum.StatusBarInterpolation.Immediate,
+                isChannel and Enum.StatusBarTimerDirection.RemainingTime or Enum.StatusBarTimerDirection.ElapsedTime)
+        end
+        if not cb:IsShown() then cb:Show() end
+
+        -- Visual styling for interruptible vs uninterruptible casts
+        local isUninterruptible = FNP.GetOverride("nameplate_uninterruptible", 1) == 1 and notInterruptible
+        if cb.lastInterruptible ~= isUninterruptible then
+            cb.lastInterruptible = isUninterruptible
+            if isUninterruptible then
+                cb:SetStatusBarColor(0.65, 0.65, 0.65, 1)
+                cb.backdrop:SetBackdropBorderColor(0.7, 0.7, 0.7, 1)
+                cb.texture:SetBackdropBorderColor(0.7, 0.7, 0.7, 1)
+            else
+                cb:SetStatusBarColor(1, 0.8, 0, 1)
+                cb.backdrop:SetBackdropBorderColor(1, 0.8, 0, 1)
+                cb.texture:SetBackdropBorderColor(1, 0.8, 0, 1)
+            end
+        end
+
+        if cb.lastSpell ~= cast then
+            cb.lastSpell = cast
+            cb.text:SetText(cast)
+        end
+
+        if cb.lastTexture ~= texture then
+            cb.lastTexture = texture
+            if texture then
+                cb.texture.icon:SetTexture(texture)
+                cb.texture.icon:Show()
+            else
+                cb.texture.icon:Hide()
+            end
+        end
+    end
+
     table.insert(libnameplate.OnUpdate, function(plate, unit, now)
         if not active then return end
         if not plate.fnpCastbar then create_castbar(plate) end
+        local cb = plate.fnpCastbar
 
         if not plate:IsShown() then
-            if plate.fnpCastbar:IsShown() then
-                plate.fnpCastbar:Hide()
-                plate.fnpCastbar.lastSpell = nil
-                plate.fnpCastbar.lastMax = nil
-                plate.fnpCastbar.lastTexture = nil
-                plate.fnpCastbar.lastSparkX = nil
-                plate.fnpCastbar.lastInterruptible = nil
-            end
+            HideBar(cb)
             return
         end
 
-        local cb = plate.fnpCastbar
         -- Events invalidate immediately; bounded reconciliation covers remote
-        -- casts whose event telemetry may be incomplete. Animation stays smooth.
+        -- casts whose event telemetry may be incomplete, and pushback, which
+        -- ClassicAPI fires no event for on other units.
         if unit ~= cb.castUnit or not cb.nextQuery or now >= cb.nextQuery then
             local cast, displayName, texture, startTime, endTime, notInterruptible
             local isChannel = false
@@ -151,83 +197,13 @@ module.enable = function(self)
             end
             -- Cast events for nameplate tokens invalidate at once; idle checks are a backstop.
             cb.castUnit, cb.nextQuery = unit, now + (cast and 0.1 or 1)
-            cb.cast, cb.castTexture, cb.startTime, cb.endTime = cast, texture, startTime, endTime
-            cb.notInterruptible, cb.isChannel = notInterruptible, isChannel
-        end
-        local cast, texture, startTime, endTime = cb.cast, cb.castTexture, cb.startTime, cb.endTime
-        local notInterruptible, isChannel = cb.notInterruptible, cb.isChannel
-
-        if unit and cast and startTime and endTime and endTime > startTime and endTime > now * 1000 then
-            local max = (endTime - startTime) / 1000
-            local cur
-            if isChannel then
-                cur = (endTime / 1000) - now
+            if unit and cast and startTime and endTime and endTime > startTime and endTime > now * 1000 then
+                Show(cb, cast, texture, startTime, endTime, notInterruptible, isChannel)
             else
-                cur = now - (startTime / 1000)
+                HideBar(cb)
             end
-
-            cur = cur > max and max or (cur < 0 and 0 or cur)
-
-            if not plate.fnpCastbar:IsShown() then
-                plate.fnpCastbar:Show()
-            end
-
-            if plate.fnpCastbar.lastMax ~= max then
-                plate.fnpCastbar.lastMax = max
-                plate.fnpCastbar:SetMinMaxValues(0, max)
-            end
-
-            -- Visual styling for interruptible vs uninterruptible casts
-            local showUninterruptible = FNP.GetOverride("nameplate_uninterruptible", 1) == 1
-            local isUninterruptible = showUninterruptible and notInterruptible
-
-            if plate.fnpCastbar.lastInterruptible ~= isUninterruptible then
-                plate.fnpCastbar.lastInterruptible = isUninterruptible
-                if isUninterruptible then
-                    plate.fnpCastbar:SetStatusBarColor(0.65, 0.65, 0.65, 1)
-                    plate.fnpCastbar.backdrop:SetBackdropBorderColor(0.7, 0.7, 0.7, 1)
-                    plate.fnpCastbar.texture:SetBackdropBorderColor(0.7, 0.7, 0.7, 1)
-                else
-                    plate.fnpCastbar:SetStatusBarColor(1, 0.8, 0, 1)
-                    plate.fnpCastbar.backdrop:SetBackdropBorderColor(1, 0.8, 0, 1)
-                    plate.fnpCastbar.texture:SetBackdropBorderColor(1, 0.8, 0, 1)
-                end
-            end
-
-            plate.fnpCastbar:SetValue(cur)
-
-            local percent = max > 0 and (cur / max) or 0
-            local width = plate.fnpCastbar:GetWidth()
-            local sparkX = math.floor(width * percent)
-            if plate.fnpCastbar.lastSparkX ~= sparkX then
-                plate.fnpCastbar.lastSparkX = sparkX
-                plate.fnpCastbar.spark:SetPoint("CENTER", plate.fnpCastbar, "LEFT", sparkX, 0)
-            end
-
-            if plate.fnpCastbar.lastSpell ~= cast then
-                plate.fnpCastbar.lastSpell = cast
-                plate.fnpCastbar.text:SetText(cast)
-            end
-
-            if plate.fnpCastbar.lastTexture ~= texture then
-                plate.fnpCastbar.lastTexture = texture
-                if texture then
-                    plate.fnpCastbar.texture.icon:SetTexture(texture)
-                    plate.fnpCastbar.texture.icon:Show()
-                else
-                    plate.fnpCastbar.texture.icon:Hide()
-                end
-            end
-
-        else
-            if plate.fnpCastbar:IsShown() then
-                plate.fnpCastbar:Hide()
-                plate.fnpCastbar.lastSpell = nil
-                plate.fnpCastbar.lastMax = nil
-                plate.fnpCastbar.lastTexture = nil
-                plate.fnpCastbar.lastSparkX = nil
-                plate.fnpCastbar.lastInterruptible = nil
-            end
+        elseif cb.endSec and now >= cb.endSec then
+            HideBar(cb)
         end
     end)
 
