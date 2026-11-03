@@ -69,9 +69,6 @@ AddOns list. It never enables or disables FostercareTweaks, and while it is
 disabled none of its files run. The game's enemy-plate key binding still decides
 whether plates show. Restart the game once after first installing it.
 
-BlizzNameplatesPlus and ShaguPlates take precedence: while either is loaded, this
-addon leaves the plates alone.
-
 ## Settings from FostercareTweaks
 
 On its first enabled load, the addon copies your nameplate settings from

@@ -15,7 +15,6 @@ independently of [FostercareTweaks](https://github.com/Fostercare5988/Fostercare
 
 Scaling, details, class colors, castbars and cooldown estimates each have their own
 switch. Native names, mouseover and targeting stay with the game.
-BlizzNameplatesPlus and ShaguPlates take precedence when loaded.
 
 ## Requirements
 
