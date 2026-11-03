@@ -129,7 +129,7 @@ panel:SetScript("OnShow", function() ShowTab(tab); pages[tab]:Show() end)
 -- preview moves to the page being placed: the top of the right column in the
 -- window, the top of the page in AddOn Options. previewWide tells the right
 -- column whether to start under it.
-local holder = CreateFrame("Frame", nil, panel); holder:EnableMouse(false)
+local holder = CreateFrame("Frame", "FNPOptPreview", panel); holder:EnableMouse(false)
 holder:SetWidth(SIDE); holder:SetHeight(148)
 UI.Heading(holder, "Preview", 0, 0)
 local box = CreateFrame("Frame", nil, holder); box:EnableMouse(false)
@@ -145,7 +145,12 @@ end }
 local function PreviewOn(page)
     layout:Section(page, true)
     layout:Add(page, L, { place = function(x, y)
-        holder:SetParent(page); holder:ClearAllPoints()
+        if holder:GetParent() ~= page then
+            -- Made in the hidden window, the preview draws in AddOn Options only
+            -- once it is shown again after the move (2026-11-03, in play).
+            holder:SetParent(page); holder:Hide(); holder:Show()
+        end
+        holder:ClearAllPoints()
         if previewWide then
             holder:SetPoint("TOPLEFT", page, "TOPLEFT", RIGHT, START)
             return 0
