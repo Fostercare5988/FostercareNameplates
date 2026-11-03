@@ -2,7 +2,7 @@
 
 Nameplate features: health and auras, cast bars, class colors, scaling, enemy
 cooldowns. Player guide: `docs/USER_GUIDE.md`. Regression tests:
-`regressions/FostercareNameplates` in VanillaForge (82 tests).
+`regressions/FostercareNameplates` in VanillaForge (89 tests).
 
 | File | Job |
 | --- | --- |
@@ -14,8 +14,8 @@ cooldowns. Player guide: `docs/USER_GUIDE.md`. Regression tests:
 | `ClassColors.lua` | Class-colored health bars |
 | `Castbars.lua` | Enemy cast bars |
 | `Cooldowns.lua` | Observed enemy cooldowns |
-| `ForgeUI.lua`, `Media/` | VanillaForge ForgeUI kit (Ember), copied unchanged |
-| `Settings.lua` | Settings window: four ForgeUI tabs and a shared live preview |
+| `ForgeUI.lua`, `ForgeLayout.lua`, `Media/` | VanillaForge ForgeUI kit (Ember) and its page layout, copied unchanged |
+| `Settings.lua` | Settings: four pages built as sections, in the `/fnp` window (two columns) and as AddOn Options categories (one column, `UI.Book`); one live preview that moves to the page being placed |
 
 Things to know:
 
