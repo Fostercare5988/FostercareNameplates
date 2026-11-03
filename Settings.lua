@@ -4,11 +4,27 @@ local _, ns = ...
 local UI = ns.UI
 local CD, NP = FNP.NameplateCooldowns, FNP.Nameplates
 
--- ForgeUI layout (VanillaForge templates/ForgeUI): columns at 28 and 264, and a
--- live plate preview at the top of the right column on every tab.
-local LEFT, RIGHT, SIDE = 28, 264, 208
+-- ForgeUI settings (VanillaForge templates/ForgeUI): four pages, shown in the
+-- /fnp window in two columns with a live plate preview at the top of the right
+-- column, or one at a time in AddOn Options in one column, preview first.
+local RIGHT, SIDE = 264, 208
+local START = -98
 local panel = UI.Window("FostercareNameplatesSettingsGUI", "FostercareNameplates", 500, 440,
     GetAddOnMetadata("FostercareNameplates", "Version"))
+
+local TAB_LIST = {
+    { label = "General", height = 440 },
+    { label = "Text & auras", height = 470 },
+    { label = "Target", height = 466 },
+    { label = "Casts", height = 420 },
+}
+local tab = 1
+local book                              -- the pages in AddOn Options (ForgeLayout.lua)
+
+-- Pages are built as sections of one or two columns (ForgeLayout.lua): side
+-- by side in the window, one column in AddOn Options.
+local L, R = UI.L, UI.R
+local layout = UI.NewLayout()
 
 -- Each control adds a sync that shows its saved value and dims it while it
 -- cannot take effect. options maps every reset-able key to its default.
@@ -18,6 +34,7 @@ local RefreshPreview
 local function Refresh()
     for _, sync in ipairs(syncs) do sync() end
     RefreshPreview()
+    book:Place(tab)
 end
 
 -- Layout-only changes skip re-querying every plate's health, auras and target.
@@ -41,31 +58,37 @@ local function Percent(value) return math.floor(value * 100 + 0.5) .. "%" end
 local function Pixels(value) return value .. " px" end
 local function Seconds(value) return value .. " s" end
 
+-- Items --------------------------------------------------------------------------
+local function Heading(page, column, text) layout:Heading(page, column, text) end
+local function Hint(page, column, text, options) return layout:Hint(page, column, text, options) end
+
 -- A switch for one feature module (its own saved key, not an override).
-local function Feature(page, title, text, tip, y)
-    local widget = UI.Switch("FNPOpt_" .. string.gsub(title, " ", ""), page, text, tip, LEFT, y, function(value)
+local function Feature(page, title, text, tip, column)
+    local widget = UI.Switch("FNPOpt_" .. string.gsub(title, " ", ""), page, text, tip, 0, 0, function(value)
         FostercareNameplates_Config[title] = value and 1 or 0
         local mod = FNP.mods[title]
         if FNP.nameplatesEnabled and mod and mod.enable then mod:enable() end
         Apply(); Refresh()
     end)
     table.insert(syncs, function() UI.Sync(widget, FNP.IsEnabled(title), Live()) end)
+    layout:Switch(page, column, widget)
 end
 
-local function Option(page, key, fallback, text, tip, x, y, needs)
+local function Option(page, key, fallback, text, tip, column, needs, item)
     options[key] = fallback
-    local widget = UI.Switch("FNPOpt_" .. key, page, text, tip, x, y, function(value)
+    local widget = UI.Switch("FNPOpt_" .. key, page, text, tip, 0, 0, function(value)
         FNP.SetOverride(key, value and 1 or 0); Apply(); Refresh()
-    end, x == RIGHT and 172 or nil)
+    end, column == R and 172 or nil)
     table.insert(syncs, function() UI.Sync(widget, On(key, fallback), needs()) end)
+    layout:Switch(page, column, widget, item)
 end
 
 -- Aura icon size and count change which icons exist, so they re-query auras.
 local auraKeys = { nameplate_aura_size = true, nameplate_aura_count = true }
 
-local function Slider(page, key, fallback, minimum, maximum, step, text, x, y, needs, format)
+local function Slider(page, key, fallback, minimum, maximum, step, text, column, needs, format, item)
     options[key] = fallback
-    local slider = UI.Slider("FNPOpt_" .. key, page, text, x, y, SIDE, minimum, maximum, step, function(value)
+    local slider = UI.Slider("FNPOpt_" .. key, page, text, 0, 0, SIDE, minimum, maximum, step, function(value)
         FNP.SetOverride(key, value); Apply(not auraKeys[key]); RefreshPreview()
     end, format)
     table.insert(syncs, function()
@@ -75,11 +98,13 @@ local function Slider(page, key, fallback, minimum, maximum, step, text, x, y, n
         slider:EnableMouse(on); slider:SetAlpha(alpha)
         slider.label:SetAlpha(alpha); slider.valueText:SetAlpha(alpha)
     end)
+    layout:Slider(page, column, slider, item)
 end
 
-local function Choice(page, key, fallback, values, labels, x, y, needs)
+-- A segmented choice, SIDE wide, 24 high.
+local function Choice(page, key, fallback, values, labels, column, needs, item)
     options[key] = fallback
-    local buttons, Select, track = UI.Segmented("FNPOpt_" .. key, page, labels, x, y, SIDE, function(index)
+    local buttons, Select, track = UI.Segmented("FNPOpt_" .. key, page, labels, 0, 0, SIDE, function(index)
         FNP.SetOverride(key, values[index]); Apply(); Refresh()
     end, { height = 24 })
     table.insert(syncs, function()
@@ -90,51 +115,79 @@ local function Choice(page, key, fallback, values, labels, x, y, needs)
         track:SetAlpha(on and 1 or 0.4)
         for _, button in ipairs(buttons) do if on then button:Enable() else button:Disable() end end
     end)
+    item = item or {}
+    item.height, item.regions = 32, { { track, "TOPLEFT", "TOPLEFT", 0, 0 } }
+    layout:Add(page, column, item)
 end
 
-local function Hint(page, text, x, y, width)
-    local label = UI.Label(page, text, x, y, "GameFontDisableSmall")
-    label:SetWidth(width or SIDE)
-    return label
+local pages, ShowTab = UI.Tabs(panel, "FNPOpt", TAB_LIST, function(index) tab = index; Refresh() end)
+-- A page back from AddOn Options is hidden even when its tab is the active one.
+panel:SetScript("OnShow", function() ShowTab(tab); pages[tab]:Show() end)
+
+-- Preview ------------------------------------------------------------------------
+-- A sample enemy on every page; sizes follow the settings, capped to fit. One
+-- preview moves to the page being placed: the top of the right column in the
+-- window, the top of the page in AddOn Options. previewWide tells the right
+-- column whether to start under it.
+local holder = CreateFrame("Frame", nil, panel); holder:EnableMouse(false)
+holder:SetWidth(SIDE); holder:SetHeight(148)
+UI.Heading(holder, "Preview", 0, 0)
+local box = CreateFrame("Frame", nil, holder); box:EnableMouse(false)
+box:SetWidth(SIDE); box:SetHeight(130); box:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, -18)
+UI.Rounded(box, "BACKGROUND", 10, UI.track)
+-- Two columns from 460 wide, as ForgeLayout lays them out.
+local previewWide = true
+local placing = { Place = function(_, page, width)
+    previewWide = width >= 460
+    return layout:Place(page, width)
+end }
+
+local function PreviewOn(page)
+    layout:Section(page, true)
+    layout:Add(page, L, { place = function(x, y)
+        holder:SetParent(page); holder:ClearAllPoints()
+        if previewWide then
+            holder:SetPoint("TOPLEFT", page, "TOPLEFT", RIGHT, START)
+            return 0
+        end
+        holder:SetPoint("TOPLEFT", page, "TOPLEFT", x, y)
+        return 148
+    end })
+    layout:Section(page)
+    -- The right column starts under the preview in the window.
+    layout:Add(page, R, { place = function() return previewWide and 146 or 0 end })
 end
 
-local tab = 1
-local pages, ShowTab = UI.Tabs(panel, "FNPOpt", {
-    { label = "General", height = 440 },
-    { label = "Text & auras", height = 470 },
-    { label = "Target", height = 466 },
-    { label = "Casts", height = 420 },
-}, function(index) tab = index; Refresh() end)
-panel:SetScript("OnShow", function() ShowTab(tab) end)
-
--- General -------------------------------------------------------------------
+-- General ---------------------------------------------------------------------
 local general = pages[1]
-UI.Heading(general, "Nameplates", LEFT, -98)
+PreviewOn(general)
+Heading(general, L, "Nameplates")
 local master = UI.Switch("FNPOpt_Master", general, "Use FostercareNameplates",
-    "Off keeps Blizzard plates and your target-frame castbar. Takes effect after /reload.", LEFT, -118,
+    "Off keeps Blizzard plates and your target-frame castbar. Takes effect after /reload.", 0, 0,
     function(value)
         FostercareNameplates_Config.nameplatesEnabled = value and 1 or 0
         Refresh()
     end)
-UI.Heading(general, "Features", LEFT, -160)
-Feature(general, "Nameplate Scale", "Resize plates", "Plate and castbar size.", -180)
+layout:Switch(general, L, master)
+Heading(general, L, "Features")
+Feature(general, "Nameplate Scale", "Resize plates", "Plate and castbar size.", L)
 Feature(general, "Nameplate Details", "Target, text, auras and marks",
-    "Target emphasis, health and level text, auras, combo points, raid marks and fading.", -206)
-Feature(general, "Nameplate Class Colors", "Class colors for players", "Color enemy and friendly player bars by class.", -232)
-Feature(general, "Nameplate Castbar", "Enemy castbars", "A castbar under each casting enemy.", -258)
+    "Target emphasis, health and level text, auras, combo points, raid marks and fading.", L)
+Feature(general, "Nameplate Class Colors", "Class colors for players", "Color enemy and friendly player bars by class.", L)
+Feature(general, "Nameplate Castbar", "Enemy castbars", "A castbar under each casting enemy.", L)
 Feature(general, "Enemy Nameplate Cooldowns", "Enemy cooldowns",
-    "Icons for cooldowns seen used by enemy players.", -284)
-UI.Heading(general, "Size", RIGHT, -258)
-Slider(general, "nameplate_scale", 1, 0.1, 4, 0.05, "Plate size", RIGHT, -278, Scale, Times)
-Option(general, "nameplate_follow_ui", 0, "Follow UI scale", "Multiply plate size by the game's UI scale.",
-    RIGHT, -322, Scale)
-local status = Hint(general, "", LEFT, -362, 444)
+    "Icons for cooldowns seen used by enemy players.", L)
+Heading(general, R, "Size")
+Slider(general, "nameplate_scale", 1, 0.1, 4, 0.05, "Plate size", R, Scale, Times)
+Option(general, "nameplate_follow_ui", 0, "Follow UI scale", "Multiply plate size by the game's UI scale.", R, Scale)
+layout:Section(general, true)
+local status = Hint(general, L, "", { before = 16 })
 local reset = UI.Button("FNPOpt_Reset", general, "Reset settings", 0, 0, 172, function()
     for key, fallback in pairs(options) do FNP.SetOverride(key, fallback) end
     Apply(); Refresh()
 end)
-reset:ClearAllPoints(); reset:SetPoint("BOTTOMLEFT", general, "BOTTOMLEFT", LEFT, 18)
 UI.Tooltip(reset, "Restore every option to its default. Feature switches stay as they are.")
+layout:Footer(general, reset, 28)
 table.insert(syncs, function()
     local enabled = FostercareNameplates_Config.nameplatesEnabled ~= 0
     UI.Sync(master, enabled)
@@ -146,69 +199,67 @@ end)
 
 -- Text & auras ----------------------------------------------------------------
 local words = pages[2]
-UI.Heading(words, "Health text", LEFT, -98)
-Choice(words, "nameplate_health", 1, { 0, 1, 2, 3 }, { "Off", "%", "Value", "Both" }, LEFT, -118, Details)
-Option(words, "nameplate_health_target", 1, "Only on your target", nil, LEFT, -152,
+PreviewOn(words)
+Heading(words, L, "Health text")
+Choice(words, "nameplate_health", 1, { 0, 1, 2, 3 }, { "Off", "%", "Value", "Both" }, L, Details)
+Option(words, "nameplate_health_target", 1, "Only on your target", nil, L,
     function() return Details() and FNP.GetNumber("nameplate_health", 1, 0, 3) > 0 end)
-UI.Heading(words, "On the plate", LEFT, -192)
+Heading(words, L, "On the plate")
 Option(words, "nameplate_level", 1, "Level in the level slot",
-    "Sized with the plate and colored by difficulty. Off shows the game's own level.", LEFT, -212, Details)
-Option(words, "nameplate_combo", 1, "Combo points on your target", nil, LEFT, -238, Details)
-Option(words, "nameplate_targeting", 0, "Label NPCs targeting you", "Hostile NPCs whose target is you. Targeting, not threat.", LEFT, -264, Details)
-UI.Heading(words, "Raid marks", LEFT, -304)
-Option(words, "nameplate_marks", 1, "Move raid marks", "Off leaves marks where the game puts them.", LEFT, -324, Details)
+    "Sized with the plate and colored by difficulty. Off shows the game's own level.", L, Details)
+Option(words, "nameplate_combo", 1, "Combo points on your target", nil, L, Details)
+Option(words, "nameplate_targeting", 0, "Label NPCs targeting you", "Hostile NPCs whose target is you. Targeting, not threat.", L, Details)
+Heading(words, L, "Raid marks")
+Option(words, "nameplate_marks", 1, "Move raid marks", "Off leaves marks where the game puts them.", L, Details)
 local marks = Both(Details, Set("nameplate_marks", 1))
-Slider(words, "nameplate_raidmark_size", 20, 12, 40, 1, "Mark size", LEFT, -356, marks, Pixels)
+Slider(words, "nameplate_raidmark_size", 20, 12, 40, 1, "Mark size", L, marks, Pixels, { before = 8 })
 Choice(words, "nameplate_raidmark_position", "left", { "left", "above", "right" }, { "Left", "Above", "Right" },
-    LEFT, -400, marks)
-UI.Heading(words, "Auras", RIGHT, -258)
-Option(words, "nameplate_own_auras", 1, "Your debuffs", "Including your pet's.", RIGHT, -278, Details)
-Option(words, "nameplate_cc", 1, "Crowd control", "One crowd-control effect from any caster.", RIGHT, -304, Details)
-Option(words, "nameplate_enemy_buffs", 0, "Enemy buffs", "Up to two buffs on enemies.", RIGHT, -330, Details)
-Slider(words, "nameplate_aura_count", 3, 1, 6, 1, "Most debuffs", RIGHT, -360,
-    Both(Details, Set("nameplate_own_auras", 1)))
-Slider(words, "nameplate_aura_size", 20, 14, 32, 1, "Icon size", RIGHT, -402, function()
+    L, marks, { before = 2 })
+Heading(words, R, "Auras")
+Option(words, "nameplate_own_auras", 1, "Your debuffs", "Including your pet's.", R, Details)
+Option(words, "nameplate_cc", 1, "Crowd control", "One crowd-control effect from any caster.", R, Details)
+Option(words, "nameplate_enemy_buffs", 0, "Enemy buffs", "Up to two buffs on enemies.", R, Details)
+Slider(words, "nameplate_aura_count", 3, 1, 6, 1, "Most debuffs", R,
+    Both(Details, Set("nameplate_own_auras", 1)), nil, { before = 4 })
+Slider(words, "nameplate_aura_size", 20, 14, 32, 1, "Icon size", R, function()
     return Details() and (On("nameplate_own_auras", 1) or On("nameplate_cc", 1) or On("nameplate_enemy_buffs", 0))
 end, Pixels)
 
 -- Target ----------------------------------------------------------------------
 local target = pages[3]
-UI.Heading(target, "Your target", LEFT, -98)
-Option(target, "nameplate_target_glow", 0, "Warm glow", nil, LEFT, -118, Details)
-Slider(target, "nameplate_target_scale", 1.1, 1, 1.5, 0.05, "Target size", LEFT, -150, Both(Details, Scale), Times)
-Slider(target, "nameplate_other_alpha", 0.8, 0.2, 1, 0.05, "Other plates", LEFT, -192, Details, Percent)
-UI.Heading(target, "Fade", LEFT, -244)
-Option(target, "nameplate_fade_critters", 0, "Critters", nil, LEFT, -264, Details)
-Option(target, "nameplate_fade_totems", 0, "Totems", nil, LEFT, -290, Details)
-Option(target, "nameplate_fade_pets", 0, "Pets and guardians", "Other players' pets, guardians and totems.", LEFT, -316, Details)
-Option(target, "nameplate_fade_trivial", 0, "Grey-level enemies", nil, LEFT, -342, Details)
-Option(target, "nameplate_fade_neutral", 0, "Idle neutral units", "Neutral units not in combat.", LEFT, -368, Details)
-Slider(target, "nameplate_fade_alpha", 0.3, 0.1, 0.8, 0.05, "Faded plates", LEFT, -400, function()
+PreviewOn(target)
+Heading(target, L, "Your target")
+Option(target, "nameplate_target_glow", 0, "Warm glow", nil, L, Details)
+Slider(target, "nameplate_target_scale", 1.1, 1, 1.5, 0.05, "Target size", L, Both(Details, Scale), Times, { before = 6 })
+Slider(target, "nameplate_other_alpha", 0.8, 0.2, 1, 0.05, "Other plates", L, Details, Percent)
+Heading(target, L, "Fade")
+Option(target, "nameplate_fade_critters", 0, "Critters", nil, L, Details)
+Option(target, "nameplate_fade_totems", 0, "Totems", nil, L, Details)
+Option(target, "nameplate_fade_pets", 0, "Pets and guardians", "Other players' pets, guardians and totems.", L, Details)
+Option(target, "nameplate_fade_trivial", 0, "Grey-level enemies", nil, L, Details)
+Option(target, "nameplate_fade_neutral", 0, "Idle neutral units", "Neutral units not in combat.", L, Details)
+Slider(target, "nameplate_fade_alpha", 0.3, 0.1, 0.8, 0.05, "Faded plates", L, function()
     return Details() and (On("nameplate_fade_critters", 0) or On("nameplate_fade_totems", 0) or On("nameplate_fade_pets", 0)
         or On("nameplate_fade_trivial", 0) or On("nameplate_fade_neutral", 0))
-end, Percent)
-Hint(target, "Your target and marked units never fade. Faded plates stay clickable.", RIGHT, -258)
+end, Percent, { before = 4 })
+Hint(target, R, "Your target and marked units never fade. Faded plates stay clickable.", { before = 14 })
 
 -- Casts -----------------------------------------------------------------------
 local casts = pages[4]
-UI.Heading(casts, "Castbars", LEFT, -98)
-Slider(casts, "nameplate_cast_height", 10, 6, 18, 1, "Height", LEFT, -118, Castbars, Pixels)
-Slider(casts, "nameplate_cast_gap", 3, 0, 16, 1, "Gap below bar", LEFT, -160, Castbars, Pixels)
-Hint(casts, "Grey bars are casts you cannot interrupt.", LEFT, -202)
-UI.Heading(casts, "Enemy cooldowns", LEFT, -244)
-Option(casts, "nameplate_cd_target", 0, "Only on your target", nil, LEFT, -264, Cooldowns)
-Slider(casts, "nameplate_cd_size", 22, 14, 40, 1, "Icon size", LEFT, -296, Cooldowns, Pixels)
-Slider(casts, "nameplate_cd_count", 5, 1, 8, 1, "Most icons", LEFT, -338, Cooldowns)
-Slider(casts, "nameplate_cd_minimum", 5, 5, 120, 1, "Shortest cooldown", RIGHT, -258, Cooldowns, Seconds)
-Slider(casts, "nameplate_cd_offset", 8, 0, 60, 1, "Space above auras", RIGHT, -300, Cooldowns, Pixels)
-Hint(casts, "Seen enemy players only. ~ marks an estimate: talents and resets can change it.", RIGHT, -342)
+PreviewOn(casts)
+Heading(casts, L, "Castbars")
+Slider(casts, "nameplate_cast_height", 10, 6, 18, 1, "Height", L, Castbars, Pixels)
+Slider(casts, "nameplate_cast_gap", 3, 0, 16, 1, "Gap below bar", L, Castbars, Pixels)
+Hint(casts, L, "Grey bars are casts you cannot interrupt.", { before = 15 })
+Heading(casts, L, "Enemy cooldowns")
+Option(casts, "nameplate_cd_target", 0, "Only on your target", nil, L, Cooldowns)
+Slider(casts, "nameplate_cd_size", 22, 14, 40, 1, "Icon size", L, Cooldowns, Pixels, { before = 6 })
+Slider(casts, "nameplate_cd_count", 5, 1, 8, 1, "Most icons", L, Cooldowns)
+Slider(casts, "nameplate_cd_minimum", 5, 5, 120, 1, "Shortest cooldown", R, Cooldowns, Seconds, { before = 14 })
+Slider(casts, "nameplate_cd_offset", 8, 0, 60, 1, "Space above auras", R, Cooldowns, Pixels)
+Hint(casts, R, "Seen enemy players only. ~ marks an estimate: talents and resets can change it.", { before = 0 })
 
--- Preview -----------------------------------------------------------------------
--- A sample enemy on every tab; sizes follow the settings, capped to fit.
-UI.Heading(panel, "Preview", RIGHT, -98)
-local box = CreateFrame("Frame", nil, panel); box:EnableMouse(false)
-box:SetWidth(SIDE); box:SetHeight(130); box:SetPoint("TOPLEFT", panel, "TOPLEFT", RIGHT, -116)
-UI.Rounded(box, "BACKGROUND", 10, UI.track)
+-- The sample plate ----------------------------------------------------------------
 local preview = CreateFrame("Frame", nil, box); preview:EnableMouse(false)
 preview:SetWidth(110); preview:SetHeight(14); preview:SetPoint("CENTER", box, "CENTER", -8, -16)
 local bar = CreateFrame("StatusBar", nil, preview); bar:EnableMouse(false); bar:SetAllPoints(preview)
@@ -276,24 +327,23 @@ RefreshPreview = function()
     Shown(glow, detail and FNP.GetOverride("nameplate_target_glow", 0) == 1)
 end
 
--- Game Menu > AddOn Options > FostercareNameplates (ClassicAPI).
-local entry = CreateFrame("Frame", "FostercareNameplatesOptionsEntry")
-entry.name = "FostercareNameplates"
-local entryTitle = entry:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-entryTitle:SetPoint("TOPLEFT", entry, "TOPLEFT", 16, -16)
-entryTitle:SetText("FostercareNameplates")
-local entryText = entry:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-entryText:SetPoint("TOPLEFT", entryTitle, "BOTTOMLEFT", 0, -8)
-entryText:SetText("Settings open in their own window. Type /fnp to open them at any time.")
-UI.Select(UI.Button("FostercareNameplatesOptionsOpen", entry, "Open settings", 16, -70, 172, function()
-    if InterfaceOptionsFrame and InterfaceOptionsFrame:IsShown() then InterfaceOptionsFrame:Hide() end
-    if GameMenuFrame and GameMenuFrame:IsShown() then HideUIPanel(GameMenuFrame) end
+-- Opening ------------------------------------------------------------------------
+-- The window toggles; opening it closes AddOn Options (one place at a time).
+local function Toggle()
+    if panel:IsShown() then panel:Hide(); return end
+    if InterfaceOptionsFrame:IsShown() then InterfaceOptionsFrame:Hide() end
     panel:Show()
-end), true)
-InterfaceOptions_AddCategory(entry)
+end
+
+-- Game Menu > AddOn Options > FostercareNameplates (ClassicAPI): the same four
+-- pages, one category each, in one column (ForgeLayout.lua).
+book = UI.Book({
+    name = "FostercareNameplates", text = "Open a page under FostercareNameplates, or type /fnp for the settings window.",
+    open = function() if not panel:IsShown() then Toggle() end end,
+    panel = panel, pages = pages, tabs = TAB_LIST, layout = placing, refresh = Refresh,
+    select = function(index) tab = index end,
+})
 
 SLASH_FOSTERCARENAMEPLATES1 = "/fnp"
 SLASH_FOSTERCARENAMEPLATES2 = "/fostercarenameplates"
-SlashCmdList.FOSTERCARENAMEPLATES = function()
-    if panel:IsShown() then panel:Hide() else panel:Show() end
-end
+SlashCmdList.FOSTERCARENAMEPLATES = Toggle

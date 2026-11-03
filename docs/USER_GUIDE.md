@@ -1,10 +1,12 @@
 # FostercareNameplates User Guide
 
-Type `/fnp` to open the settings, or use **Game Menu > AddOn Options >
-FostercareNameplates**. They save per character and apply right away,
-except the main switch. The preview on the right of every tab shows a sample
-enemy with your choices. Its size is capped so it fits the window. Settings that
-cannot take effect, because their feature is off, are dimmed.
+Type `/fnp` to open the settings window. The same four pages are also in
+**Game Menu > AddOn Options > FostercareNameplates**, one category each
+(General, Text & auras, Target, Casts), in one column at full size. Settings
+save per character and apply right away, except the main switch. The preview
+on every page shows a sample enemy with your choices: at the top right in the
+window, at the top in AddOn Options. Its size is capped so it fits. Settings
+that cannot take effect, because their feature is off, are dimmed.
 
 ## General
 
