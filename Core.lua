@@ -54,10 +54,3 @@ frame:SetScript("OnEvent", function(a1, a2)
         frame:UnregisterAllEvents()
     end
 end)
-
-SLASH_FOSTERCARENAMEPLATES1 = "/fnp"
-SLASH_FOSTERCARENAMEPLATES2 = "/fostercarenameplates"
-SlashCmdList.FOSTERCARENAMEPLATES = function()
-    local settings = FostercareNameplatesSettingsGUI
-    if settings:IsShown() then settings:Hide() else settings:Show() end
-end

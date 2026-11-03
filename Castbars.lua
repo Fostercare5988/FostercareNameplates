@@ -9,8 +9,9 @@ local module = FNP:register({
     description = "Adds a castbar to the nameplate based on unit casting information.",
     category = "Nameplates",
     enabled = true,
-    config = { nameplate_uninterruptible = 1 },
 })
+-- "Grey when uninterruptible" was on for every character: always grey now.
+FostercareNameplates_Config.overwrites.nameplate_uninterruptible = nil
 
 -- The cast events that fire for other units (ClassicAPI docs, UNIT_SPELLCAST_*).
 -- DELAYED and CHANNEL_UPDATE fire only for the player: another unit's pushback
@@ -100,7 +101,7 @@ local function Show(cb, cast, texture, startTime, endTime, notInterruptible, isC
     if not ticker then ticker = C_Timer.NewTicker(0.5, Backstop) end
 
     -- Grey for a cast you cannot interrupt.
-    local locked = FNP.GetOverride("nameplate_uninterruptible", 1) == 1 and notInterruptible and true or false
+    local locked = notInterruptible and true or false
     if cb.lastLocked ~= locked then
         cb.lastLocked = locked
         local r, g, b = 1, 0.8, 0
