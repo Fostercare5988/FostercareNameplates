@@ -49,10 +49,10 @@ function FNP.LayoutNameplateCastbar(plate)
     if oldSize ~= size or flags ~= "OUTLINE" then cb.text:SetFont(font, size, "OUTLINE") end
 end
 
-local function Apply(plate, restore)
-    if not plate or (not FNP.OwnsNameplates() and not restore) then return end
+local function Apply(plate)
+    if not plate or not FNP.OwnsNameplates() then return end
     Capture(plate)
-    local enabled = not restore and FNP.IsEnabled(module.title)
+    local enabled = FNP.IsEnabled(module.title)
     local scale = 1
     if enabled then
         scale = FNP.GetNumber("nameplate_scale", 1, 0.1, 4)
@@ -61,7 +61,7 @@ local function Apply(plate, restore)
         end
         if plate.fnpIsTarget then scale = scale * FNP.GetNumber("nameplate_target_scale", 1.1, 1, 1.5) end
     end
-    plate.fnpVisualScale, plate.fnpScaleOwned = scale, enabled
+    plate.fnpVisualScale = scale
     -- Check every owned component at lifecycle/settings boundaries. Native
     -- projection may reset a child while leaving the root width unchanged.
     Dimensions(plate, plate.fnpOrigW * scale, plate.fnpOrigH * scale)
@@ -77,9 +77,6 @@ local function Apply(plate, restore)
 end
 
 FNP.ApplyNameplateScale = Apply
-function FNP.RestoreNameplateScale(plate)
-    if plate.fnpScaleOwned then Apply(plate, true) end
-end
 function FNP.RefreshNameplateScale()
     for plate in pairs(FNP.libnameplate.plates) do
         if plate:IsShown() then Apply(plate) end

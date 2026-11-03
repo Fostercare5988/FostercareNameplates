@@ -19,7 +19,7 @@ local lib = FNP.libnameplate
 local queued, driver
 local auraSlots = {}
 local DETAIL_EVENTS = { "PLAYER_TARGET_CHANGED", "PLAYER_COMBO_POINTS", "UNIT_HEALTH", "UNIT_MAXHEALTH",
-    "UNIT_AURA_DELTA", "UNIT_FACTION", "UNIT_LEVEL", "RAID_TARGET_UPDATE", "PLAYER_ENTERING_WORLD", "ADDON_LOADED" }
+    "UNIT_AURA_DELTA", "UNIT_FACTION", "UNIT_LEVEL", "RAID_TARGET_UPDATE", "PLAYER_ENTERING_WORLD" }
 
 function FNP.MigrateNameplateSettings()
     local cfg = FostercareNameplates_Config
@@ -504,7 +504,10 @@ function NP:Shutdown()
     self.targetPlate, self.targetGUID = nil, nil
 end
 
+-- Turning details off restores the plates once; while off, settings changes
+-- leave them to the game.
 function NP:ApplyConfiguration(layoutOnly)
+    local wasActive = self.active
     self.active = FNP.IsEnabled(module.title, true) and FNP.OwnsNameplates()
     module.rendering = self.active
     FNP.RefreshRendering()
@@ -552,28 +555,19 @@ function NP:ApplyConfiguration(layoutOnly)
                 self:Queue(plate, "health"); self:Queue(plate, "level"); self:Queue(plate, "auras"); self:Queue(plate, "targeting")
                 self:Combo(plate)
             end
-        else
+        elseif wasActive then
             plate.fnpIsTarget = false
             Clear(plate); self:LayoutMark(plate, true); NativeLevel(plate, true)
-            if FNP.OwnsNameplates() then plate:SetAlpha(1) end
-            if not FNP.OwnsNameplates() and FNP.RestoreNameplateScale then FNP.RestoreNameplateScale(plate) end
+            plate:SetAlpha(1); plate.fnpAlpha, plate.fnpDrawnAlpha = nil, nil
         end
     end
-    if not self.active then self.targetPlate, self.targetGUID = nil, nil; FNP.RefreshNameplateScale() end
+    if wasActive and not self.active then self.targetPlate, self.targetGUID = nil, nil; FNP.RefreshNameplateScale() end
 end
 
 module.enable = function(self)
     if not driver then
         driver = CreateFrame("Frame", "FNPNameplateDetailsEvents")
         FNP.SetEventHandler(driver, function(_, ev, unit, info)
-            if ev == "ADDON_LOADED" then
-                if NP.active and not FNP.OwnsNameplates() then
-                    NP:ApplyConfiguration()
-                    FNP.mods["Nameplate Castbar"]:enable()
-                    FNP.mods["Nameplate Class Colors"]:enable()
-                end
-                return
-            end
             if not NP.active then return end
             if ev == "PLAYER_TARGET_CHANGED" then NP:TargetChanged()
             elseif ev == "PLAYER_COMBO_POINTS" then if NP.targetPlate then NP:Combo(NP.targetPlate) end

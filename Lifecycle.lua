@@ -34,7 +34,7 @@ function FNP.RefreshRendering()
 end
 
 function FNP.OwnsNameplates()
-    return FNP.nameplatesEnabled and not libnameplate.stopping and not ShaguPlates and not BNP
+    return FNP.nameplatesEnabled and not libnameplate.stopping
 end
 
 local function InitPlate(plate, unit)

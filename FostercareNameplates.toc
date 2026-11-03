@@ -4,7 +4,6 @@
 ## Author: Fostercare5988
 ## Version: 1.5.0
 ## X-Website: https://github.com/Fostercare5988/FostercareNameplates
-## OptionalDeps: BlizzNameplatesPlus, ShaguPlates
 ## DefaultState: disabled
 ## SavedVariablesPerCharacter: FostercareNameplates_Config
 ## LoadSavedVariablesFirst: 1
