@@ -1,10 +1,9 @@
 -- FostercareNameplates owns only nameplate features and their settings.
-local superMajor, superMinor = string.match(tostring(SUPERWOW_VERSION or ""), "^(%d+)%.(%d+)")
-superMajor, superMinor = tonumber(superMajor), tonumber(superMinor)
-if type(CLASSIC_API_VERSION) ~= "number"
-    or not superMajor or not (superMajor > 2 or (superMajor == 2 and superMinor >= 2)) then
+-- Requires ClassicAPI and SuperWoW, checked as loaded; VanillaForge's
+-- UPSTREAM_VERSIONS.json names the versions.
+if type(CLASSIC_API_VERSION) ~= "number" or not SUPERWOW_VERSION then
     if DEFAULT_CHAT_FRAME then
-        DEFAULT_CHAT_FRAME:AddMessage("FostercareNameplates requires ClassicAPI and SuperWoW 2.2+.", 1, 0.3, 0.3)
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff2020[FostercareNameplates]|r requires ClassicAPI and SuperWoW.", 1, 0.2, 0.2)
     end
     return
 end
@@ -14,7 +13,7 @@ FostercareNameplates = FNP
 if type(FostercareNameplates_Config) ~= "table" then FostercareNameplates_Config = {} end
 local config = FostercareNameplates_Config
 if type(config.overwrites) ~= "table" then config.overwrites = {} end
-config.settingsVersion = nil -- retired with the FostercareTweaks settings import
+config.nameplate_layout_version = nil -- retired with the UI-scale size migration, 2026-11-03
 
 function FNP:register(module)
     if not self.mods[module.title] then table.insert(self.moduleOrder, module.title) end
@@ -25,7 +24,6 @@ end
 function FNP:Initialize()
     if self.initialized then return end
     self.initialized = true
-    self.MigrateNameplateSettings()
     for _, title in ipairs(self.moduleOrder) do
         local module = self.mods[title]
         if config[title] == nil then config[title] = module.enabled and 1 or 0 end

@@ -18,21 +18,9 @@ FNP.Nameplates = NP
 local lib = FNP.libnameplate
 local queued, driver
 local auraSlots = {}
-local DETAIL_EVENTS = { "PLAYER_TARGET_CHANGED", "PLAYER_COMBO_POINTS", "UNIT_HEALTH", "UNIT_MAXHEALTH",
-    "UNIT_AURA_DELTA", "UNIT_FACTION", "UNIT_LEVEL", "RAID_TARGET_UPDATE", "PLAYER_ENTERING_WORLD" }
-
-function FNP.MigrateNameplateSettings()
-    local cfg = FostercareNameplates_Config
-    if cfg.nameplate_layout_version == 1 then return end
-    -- Existing explicit dimension settings included UIParent's scale. Preserve
-    -- that appearance once, then give the player an independent size control.
-    if cfg["Nameplate Scale"] ~= nil or cfg.overwrites.nameplate_scale ~= nil then
-        local ui = UIParent:GetScale()
-        if not ui or ui <= 0.2 or ui > 2 then ui = 1 end
-        FNP.SetOverride("nameplate_scale", FNP.ClampNumber(cfg.overwrites.nameplate_scale, 1, 0.5, 2) * ui)
-    end
-    cfg.nameplate_layout_version = 1
-end
+local DETAIL_EVENTS = { "PLAYER_TARGET_CHANGED", "PLAYER_COMBO_POINTS", "RAID_TARGET_UPDATE", "PLAYER_ENTERING_WORLD" }
+-- Unit events, heard for nameplateN tokens only (FNP.RegisterPlateEvent).
+local PLATE_EVENTS = { "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_AURA_DELTA", "UNIT_FACTION", "UNIT_LEVEL" }
 
 local function Visible(object, shown)
     shown = shown and true or false
@@ -146,7 +134,7 @@ function NP:LayoutExtras(plate)
     local cds = plate.fnpEnemyCooldowns
     if cds then
         local y = self:TopSpace(plate) + (plate.fnpAuraHeight or 0)
-            + FNP.GetNumber("nameplate_cd_offset", 8, 0, 60)
+            + FNP.NameplateCooldowns.offset
         if cds.fnpLayoutY ~= y then
             cds.fnpLayoutY = y; cds:ClearAllPoints(); cds:SetPoint("BOTTOM", plate.name or plate, "TOP", 0, y)
         end
@@ -165,9 +153,19 @@ function NP:Health(plate, unit)
         label:SetPoint("CENTER", plate.healthbar, "CENTER", 0, 0)
         label:SetTextColor(1, 1, 1); plate.fnpHealth = label
     end
-    local percent = math.floor(math.max(0, math.min(1, hp / maximum)) * 100 + 0.5) .. "%"
+    -- Health events repeat values (one per token, and on target changes); build
+    -- only the text that shows, and only when it changes.
     local mode = self.settings.health
-    Text(label, mode == 1 and percent or (mode == 2 and AbbreviateNumbers(hp) or AbbreviateNumbers(hp) .. "  " .. percent))
+    if label.fnpHP ~= hp or label.fnpMax ~= maximum or label.fnpMode ~= mode then
+        label.fnpHP, label.fnpMax, label.fnpMode = hp, maximum, mode
+        local text
+        if mode == 2 then text = AbbreviateNumbers(hp)
+        else
+            text = math.floor(math.max(0, math.min(1, hp / maximum)) * 100 + 0.5) .. "%"
+            if mode == 3 then text = AbbreviateNumbers(hp) .. "  " .. text end
+        end
+        Text(label, text)
+    end
     FNP.SetNameplateFontSize(label, math.max(7, 9 * (plate.fnpVisualScale or 1)))
     Visible(label, true)
 end
@@ -354,7 +352,7 @@ function NP:Combo(plate)
     local row = plate.fnpCombo
     local y = self.settings.marks and self.settings.markPosition == "above" and self.settings.markSize + 8 or 4
     if not self.settings.marks and plate.raidicon and plate.raidicon:IsShown() then y = plate.raidicon:GetHeight() + 8 end
-    row:ClearAllPoints(); row:SetPoint("BOTTOM", plate.name or plate, "TOP", 0, y)
+    if row.fnpY ~= y then row.fnpY = y; row:ClearAllPoints(); row:SetPoint("BOTTOM", plate.name or plate, "TOP", 0, y) end
     for i = 1, 5 do Visible(row.pips[i], i <= count) end
     Visible(row, true)
 end
@@ -500,9 +498,10 @@ end
 function NP:Shutdown()
     self.active = false
     if driver then driver:UnregisterAllEvents() end
-    self.pending = {}
+    table.wipe(self.pending)
     self.targetPlate, self.targetGUID = nil, nil
 end
+module.shutdown = function() NP:Shutdown() end
 
 -- Turning details off restores the plates once; while off, settings changes
 -- leave them to the game.
@@ -516,6 +515,7 @@ function NP:ApplyConfiguration(layoutOnly)
         driver:UnregisterAllEvents()
         if self.active then
             for _, ev in ipairs(DETAIL_EVENTS) do driver:RegisterEvent(ev) end
+            for _, ev in ipairs(PLATE_EVENTS) do FNP.RegisterPlateEvent(driver, ev) end
         end
     end
     local s = self.settings
@@ -536,7 +536,7 @@ function NP:ApplyConfiguration(layoutOnly)
     s.targeting = FNP.GetOverride("nameplate_targeting", 0) == 1
     -- UNIT_TARGET (ClassicAPI 1.18) says when an enemy turns to someone else.
     if driver then
-        if self.active and s.targeting then driver:RegisterEvent("UNIT_TARGET") else driver:UnregisterEvent("UNIT_TARGET") end
+        if self.active and s.targeting then FNP.RegisterPlateEvent(driver, "UNIT_TARGET") else driver:UnregisterEvent("UNIT_TARGET") end
     end
     s.fadeCritters = FNP.GetOverride("nameplate_fade_critters", 0) == 1
     s.fadeTotems = FNP.GetOverride("nameplate_fade_totems", 0) == 1
@@ -578,9 +578,6 @@ module.enable = function(self)
                 end
                 NP:TargetChanged()
             elseif unit then
-                -- ClassicAPI fires a unit event once per token (target, markN,
-                -- raidN, nameplateN); a plate's unit always gets the nameplateN one.
-                if not string.find(unit, "^nameplate") then return end
                 if ev == "UNIT_TARGET" then
                     local plate = C_NamePlate.GetNamePlateForUnit(unit)
                     if plate and lib.plates[plate] then NP:Queue(plate, "targeting") end

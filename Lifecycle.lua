@@ -37,6 +37,30 @@ function FNP.OwnsNameplates()
     return FNP.nameplatesEnabled and not libnameplate.stopping
 end
 
+-- Unit events for plates: ClassicAPI fires one per token naming the unit
+-- (target, raidN, nameplateN...). RegisterUnitEvent drops every token but the
+-- nameplate ones before Lua runs. The list grows when a plate takes a slot
+-- past its end, and re-registers what is registered at that moment.
+local plateTokens, plateEvents = {}, {}
+for i = 1, 40 do plateTokens[i] = "nameplate" .. i end
+
+function FNP.RegisterPlateEvent(frame, ev)
+    plateEvents[frame] = plateEvents[frame] or {}
+    plateEvents[frame][ev] = true
+    frame:RegisterUnitEvent(ev, unpack(plateTokens))
+end
+
+local function CoverSlot(unit)
+    local slot = tonumber(string.sub(unit, 10))
+    if not slot or slot <= #plateTokens then return end
+    for i = #plateTokens + 1, slot + 20 do plateTokens[i] = "nameplate" .. i end
+    for frame, events in pairs(plateEvents) do
+        for ev in pairs(events) do
+            if frame:IsEventRegistered(ev) then frame:RegisterUnitEvent(ev, unpack(plateTokens)) end
+        end
+    end
+end
+
 local function InitPlate(plate, unit)
     if not FNP.OwnsNameplates() then return end
     if not plate or plateRegistry[plate] then
@@ -72,6 +96,10 @@ local function InitPlate(plate, unit)
     plateRegistry[plate] = plate
 end
 
+local function Added(plate)
+    for _, callback in ipairs(libnameplate.OnAdded) do callback(plate, plate.fnpUnitGUID) end
+end
+
 -- Validate pooled-frame ownership before consuming any unit data.
 FNP.GetNameplateUnit = function(plate)
     local guid = plate.fnpUnitGUID
@@ -89,13 +117,16 @@ if FNP.OwnsNameplates() then
     libnameplate:RegisterEvent("PLAYER_LOGOUT")
 end
 
--- Stop our own events and timers only. At logout the client is already
--- freeing the plates; reparenting, resizing or re-anchoring them then was
--- followed by ERROR #124 (SGroupPtr invalid block, 2026-10-22).
+-- Stop our own events and timers only, in every module. At logout the client
+-- is already freeing the plates; reparenting, resizing or re-anchoring them
+-- then was followed by ERROR #124 (SGroupPtr invalid block, 2026-10-22).
 local function ShutdownNameplates()
     libnameplate.stopping = true
     libnameplate:UnregisterAllEvents()
-    if FNP.Nameplates then FNP.Nameplates:Shutdown() end
+    for _, title in ipairs(FNP.moduleOrder) do
+        local module = FNP.mods[title]
+        if module.shutdown then module:shutdown() end
+    end
 end
 
 FNP.SetEventHandler(libnameplate, function(_, ev, a1)
@@ -105,12 +136,11 @@ FNP.SetEventHandler(libnameplate, function(_, ev, a1)
         InitPlate(a1)
     elseif ev == "NAME_PLATE_UNIT_ADDED" and a1 then
         local unit = a1
+        CoverSlot(unit)
         local plate = C_NamePlate.GetNamePlateForUnit(unit)
         if plate then
             InitPlate(plate, unit)
-            if plateRegistry[plate] then
-                for _, callback in ipairs(libnameplate.OnAdded) do callback(plate, plate.fnpUnitGUID) end
-            end
+            if plateRegistry[plate] then Added(plate) end
         end
     elseif ev == "NAME_PLATE_UNIT_REMOVED" and a1 then
         local unit = a1
@@ -122,8 +152,14 @@ FNP.SetEventHandler(libnameplate, function(_, ev, a1)
             for _, callback in ipairs(libnameplate.OnRemoved) do callback(plate) end
         end
     elseif ev == "PLAYER_ENTERING_WORLD" then
+        -- Plates that are up when the UI loads, or that changed unit during a
+        -- loading screen, are announced like an ADDED.
         for _, guid in ipairs(C_NamePlate.GetNamePlateGUIDs()) do
-            InitPlate(C_NamePlate.GetNamePlateForGUID(guid), guid)
+            local plate = C_NamePlate.GetNamePlateForGUID(guid)
+            if plate and plate.fnpUnitGUID ~= guid then
+                InitPlate(plate, guid)
+                if plateRegistry[plate] then Added(plate) end
+            end
         end
     end
 end)
