@@ -2,7 +2,7 @@
 ## Title: |cffff9e38FostercareNameplates|r |cffffd6a8[Fostercare5988]|r
 ## Notes: Adjustable Blizzard-style nameplates. Requires ClassicAPI, SuperWoW and NamPower.
 ## Author: Fostercare5988
-## Version: 1.5.0
+## Version: 1.6.0
 ## X-Website: https://github.com/Fostercare5988/FostercareNameplates
 ## DefaultState: disabled
 ## SavedVariablesPerCharacter: FostercareNameplates_Config

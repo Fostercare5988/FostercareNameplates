@@ -192,9 +192,9 @@ Hint(target, "Your target and marked units never fade. Faded plates stay clickab
 -- Casts -----------------------------------------------------------------------
 local casts = pages[4]
 UI.Heading(casts, "Castbars", LEFT, -98)
-Option(casts, "nameplate_uninterruptible", 1, "Grey when uninterruptible", nil, LEFT, -118, Castbars)
-Slider(casts, "nameplate_cast_height", 10, 6, 18, 1, "Height", LEFT, -150, Castbars, Pixels)
-Slider(casts, "nameplate_cast_gap", 3, 0, 16, 1, "Gap below bar", LEFT, -192, Castbars, Pixels)
+Slider(casts, "nameplate_cast_height", 10, 6, 18, 1, "Height", LEFT, -118, Castbars, Pixels)
+Slider(casts, "nameplate_cast_gap", 3, 0, 16, 1, "Gap below bar", LEFT, -160, Castbars, Pixels)
+Hint(casts, "Grey bars are casts you cannot interrupt.", LEFT, -202)
 UI.Heading(casts, "Enemy cooldowns", LEFT, -244)
 Option(casts, "nameplate_cd_target", 0, "Only on your target", nil, LEFT, -264, Cooldowns)
 Slider(casts, "nameplate_cd_size", 22, 14, 40, 1, "Icon size", LEFT, -296, Cooldowns, Pixels)
@@ -291,3 +291,9 @@ UI.Select(UI.Button("FostercareNameplatesOptionsOpen", entry, "Open settings", 1
     panel:Show()
 end), true)
 InterfaceOptions_AddCategory(entry)
+
+SLASH_FOSTERCARENAMEPLATES1 = "/fnp"
+SLASH_FOSTERCARENAMEPLATES2 = "/fostercarenameplates"
+SlashCmdList.FOSTERCARENAMEPLATES = function()
+    if panel:IsShown() then panel:Hide() else panel:Show() end
+end

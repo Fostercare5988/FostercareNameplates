@@ -50,8 +50,8 @@ cannot take effect, because their feature is off, are dimmed.
 
 ## Casts
 
-- **Castbars** keep the Blizzard texture and scale with the plate. Set height,
-  the gap below the bar, and grey bars for casts you cannot interrupt. This is
+- **Castbars** keep the Blizzard texture and scale with the plate. Set the height
+  and the gap below the bar. Grey bars are casts you cannot interrupt. This is
   separate from the target-frame castbar in FostercareTweaks.
 - **Enemy cooldowns** show abilities seen used by enemy players, newest first,
   with a sweep and the game's countdown marked `~` as an estimate. Set 1–8
