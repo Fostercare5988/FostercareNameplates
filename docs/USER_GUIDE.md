@@ -31,13 +31,13 @@ cannot take effect, because their feature is off, are dimmed.
   of the plate, sized with the plate and colored by difficulty. Skull-level units
   show ??. While it is on, the game's own level number and skull are hidden.
 - **Combo points** show above your target's name. **Label NPCs targeting you**
-  marks hostile non-player units whose target is you, checked five times a
-  second. It shows targeting, not threat.
+  marks hostile non-player units whose target is you, as soon as their target
+  changes. It shows targeting, not threat.
 - **Raid marks** use the game's icon. Set 12–40 px and left, above-name or right.
   **Move raid marks** off puts them back where the game draws them.
 - **Auras**: up to 1–6 of your debuffs (your pet's too), one crowd-control effect
-  from any caster, and optionally two enemy buffs, at 14–32 px. Countdowns appear
-  only when the client knows the timing.
+  from any caster, and optionally two enemy buffs, at 14–32 px. The game counts
+  them down while its `countdownForCooldowns` setting is 1, when it knows the timing.
 
 ## Target
 
@@ -53,8 +53,8 @@ cannot take effect, because their feature is off, are dimmed.
 - **Castbars** keep the Blizzard texture and scale with the plate. Set height,
   the gap below the bar, and grey bars for casts you cannot interrupt. This is
   separate from the target-frame castbar in FostercareTweaks.
-- **Enemy cooldowns** need NamPower 4.6.2+. Icons show abilities seen used by
-  enemy players, newest first, with a sweep and an estimated `~` timer. Set 1–8
+- **Enemy cooldowns** show abilities seen used by enemy players, newest first,
+  with a sweep and the game's countdown marked `~` as an estimate. Set 1–8
   icons, 14–40 px, the shortest cooldown worth showing and the space above the
   aura row, or show them only on your target.
 - Base cooldowns come from the client's spell data. Talents, resets and server
@@ -68,10 +68,3 @@ FostercareNameplates starts disabled. Enable it in the character selection
 AddOns list. It never enables or disables FostercareTweaks, and while it is
 disabled none of its files run. The game's enemy-plate key binding still decides
 whether plates show. Restart the game once after first installing it.
-
-## Settings from FostercareTweaks
-
-On its first enabled load, the addon copies your nameplate settings from
-FostercareTweaks if that addon is enabled, so keep both on for that first login.
-Afterwards either can run alone. The Tweaks settings are left untouched and
-nothing else is shared.

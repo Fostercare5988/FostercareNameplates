@@ -2,35 +2,37 @@ local FNP = FostercareNameplates
 if not FNP then return end
 
 -- Observed enemy casts, not an inspection of another player's cooldown state.
--- SuperWoW owns cast identity; NamPower reads the current client's spell data.
+-- NamPower's cast events say what was used, its spell records the base cooldown.
 local module = FNP:register({
     title = "Enemy Nameplate Cooldowns", category = "Nameplates", enabled = true,
-    description = "Estimated cooldowns after enemy players use abilities. Requires NamPower 4.6.2+.",
+    description = "Estimated cooldowns after enemy players use abilities.",
     config = { nameplate_cd_size = 22, nameplate_cd_count = 5,
         nameplate_cd_minimum = 5, nameplate_cd_offset = 8, nameplate_cd_target = 0 },
 })
-local CD = { states = {}, count = 0 }
+local CD = { states = {}, count = 0, offset = 8 }
 FNP.NameplateCooldowns = CD
 local cache, cacheOrder, cacheCursor = {}, {}, 1
-local visible, ticker, driver, initialized
+local driver
 local MAX_UNITS, MAX_SPELLS, MAX_CACHE = 128, 16, 256
+local EVENTS = { "SPELL_GO_OTHER", "SPELL_START_OTHER", "PLAYER_ENTERING_WORLD" }
 
--- Read on apply and refresh; the 0.2 s tick only reads these.
+-- The client counts the time down (countdownForCooldowns CVar 1); "~" says the
+-- timer is an estimate: whole seconds, then minutes from 60 s, rounded up.
+local Up = Enum.NumericRuleFormatRounding.Up
+local ESTIMATE = C_StringUtil.CreateNumericRuleFormatter()
+ESTIMATE:SetBreakpoints({
+    { threshold = 0, step = 1, rounding = Up, format = "~%d" },
+    { threshold = 60, format = "~%dm", components = { { div = 60, step = 1, rounding = Up } } },
+})
+
+-- Read on apply and refresh.
 local opt = {}
 local function ReadSettings()
     opt.targetOnly = FNP.GetOverride("nameplate_cd_target", 0) == 1
     opt.minimum = FNP.GetNumber("nameplate_cd_minimum", 5, 5, 120)
     opt.maximum = math.floor(FNP.GetNumber("nameplate_cd_count", 5, 1, 8))
     opt.size = math.floor(FNP.GetNumber("nameplate_cd_size", 22, 14, 40))
-    opt.offset = FNP.GetNumber("nameplate_cd_offset", 8, 0, 60)
-end
-
-function CD:IsAvailable()
-    if type(GetNampowerVersion) ~= "function" or type(GetSpellRecField) ~= "function"
-        or type(GetSpellIconTexture) ~= "function" then return false end
-    local major, minor, patch = GetNampowerVersion()
-    return type(major) == "number" and type(minor) == "number" and type(patch) == "number"
-        and (major > 4 or (major == 4 and (minor > 6 or (minor == 6 and patch >= 2))))
+    CD.offset = FNP.GetNumber("nameplate_cd_offset", 8, 0, 60)
 end
 
 local function Metadata(id)
@@ -60,10 +62,21 @@ local function HideRow(plate)
     if not row then return end
     for _, icon in ipairs(row.icons) do
         if icon.start then icon.sweep:Clear() end
-        icon.start, icon.lastRemaining = nil, nil
+        icon.start = nil
         icon:Hide()
     end
+    row.guid = nil
     row:Hide()
+end
+
+local Draw
+
+-- An estimate ran out: draw the row again without it.
+local function Done()
+    local icon = this.owner
+    local row = icon.row
+    icon.start = nil
+    if row.guid then Draw(row.plate, row.guid, math.max(GetTime(), icon.ends)) end
 end
 
 local function Icon(row, index)
@@ -71,44 +84,46 @@ local function Icon(row, index)
     if icon then return icon end
     icon = CreateFrame("Frame", nil, row)
     icon:EnableMouse(false)
+    icon.row = row
     icon.texture = icon:CreateTexture(nil, "ARTWORK")
     icon.texture:SetAllPoints(icon)
     icon.texture:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-    icon.sweep = CreateFrame("Cooldown", nil, icon, "CooldownFrameTemplate")
-    icon.sweep:SetAllPoints(icon)
-    icon.sweep.noCooldownCount = true
-    -- The "~" estimate below is ours; native numbers would print over it.
-    icon.sweep:SetHideCountdownNumbers(true)
-    icon.textFrame = CreateFrame("Frame", nil, icon)
-    icon.textFrame:SetAllPoints(icon)
-    icon.textFrame:SetFrameLevel(icon.sweep:GetFrameLevel() + 2)
-    icon.text = icon.textFrame:CreateFontString(nil, "OVERLAY")
-    icon.text:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
-    icon.text:SetPoint("CENTER", icon.textFrame, "CENTER", 0, 0)
-    icon.text:SetTextColor(1, 0.85, 0.35)
+    local sweep = CreateFrame("Cooldown", nil, icon, "CooldownFrameTemplate")
+    sweep:SetAllPoints(icon)
+    sweep:SetCountdownFormatter(ESTIMATE)
+    local number = sweep:GetCountdownFontString()
+    number:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
+    number:SetTextColor(1, 0.85, 0.35)
+    sweep:SetScript("OnCooldownDone", Done)
+    sweep.owner, icon.sweep = icon, sweep
     row.icons[index] = icon
     return icon
 end
 
--- validated: the tick already matched plate and GUID, and the unit passed the
--- player and attackable checks when its row was first drawn.
-local function Draw(plate, guid, now, validated)
+-- Prunes the unit's ended estimates, then shows the rest, newest first.
+Draw = function(plate, guid, now)
     local state = CD.states[guid]
-    local row = plate.fnpEnemyCooldowns
-    if not state or not plate:IsShown() or (opt.targetOnly and guid ~= UnitGUID("target"))
-        or (not validated and (C_NamePlate.GetNamePlateForGUID(guid) ~= plate
-            or not UnitIsPlayer(guid) or not UnitCanAttack("player", guid))) then
+    if state then
+        local spells = state.spells
+        for i = #spells, 1, -1 do
+            if spells[i].ends <= now then table.remove(spells, i) end
+        end
+        if #spells == 0 then CD.states[guid] = nil; CD.count = CD.count - 1; state = nil end
+    end
+    if not state or (opt.targetOnly and guid ~= UnitGUID("target"))
+        or not UnitIsPlayer(guid) or not UnitCanAttack("player", guid) then
         HideRow(plate); return
     end
+    local row = plate.fnpEnemyCooldowns
     local minimum, maximum, size = opt.minimum, opt.maximum, opt.size
     local count = 0
     for _, entry in ipairs(state.spells) do
-        if entry.ends > now and entry.data.duration >= minimum and count < maximum then
+        if entry.data.duration >= minimum and count < maximum then
             count = count + 1
             if not row then
                 row = CreateFrame("Frame", nil, plate)
                 row:EnableMouse(false)
-                row.icons = {}
+                row.icons, row.plate = {}, plate
                 plate.fnpEnemyCooldowns = row
             end
             local icon = Icon(row, count)
@@ -117,14 +132,9 @@ local function Draw(plate, guid, now, validated)
                 icon:ClearAllPoints(); icon:SetPoint("LEFT", row, "LEFT", (count - 1) * (size + 3), 0)
             end
             if icon.start ~= entry.start or icon.spellID ~= entry.id then
-                icon.start, icon.spellID = entry.start, entry.id
+                icon.start, icon.ends, icon.spellID = entry.start, entry.ends, entry.id
                 icon.texture:SetTexture(entry.data.texture)
                 icon.sweep:SetCooldown(entry.start, entry.data.duration)
-            end
-            local remaining = math.ceil(entry.ends - now)
-            if icon.lastRemaining ~= remaining then
-                icon.lastRemaining = remaining
-                icon.text:SetText("~" .. (remaining >= 60 and (math.ceil(remaining / 60) .. "m") or tostring(remaining)))
             end
             if not icon:IsShown() then icon:Show() end
         end
@@ -134,53 +144,44 @@ local function Draw(plate, guid, now, validated)
     for i = count + 1, #row.icons do
         local icon = row.icons[i]
         if icon.start then icon.sweep:Clear() end
-        icon.start, icon.lastRemaining = nil, nil; icon:Hide()
+        icon.start = nil; icon:Hide()
     end
     -- Aura and target changes lay the row out themselves; here only a new,
     -- re-shown or resized row needs it.
-    local width, offset = count * (size + 3) - 3, opt.offset
+    local width = count * (size + 3) - 3
     local layout = not row:IsShown()
-    if row.width ~= width or row.size ~= size or row.offset ~= offset then
-        row.width, row.size, row.offset = width, size, offset
+    if row.width ~= width or row.size ~= size or row.offset ~= CD.offset then
+        row.width, row.size, row.offset = width, size, CD.offset
         row:SetWidth(width); row:SetHeight(size)
-        if not FNP.Nameplates then
-            row:ClearAllPoints(); row:SetPoint("BOTTOM", plate.name or plate, "TOP", 0, offset + 6)
-        end
         layout = true
     end
-    if layout and FNP.Nameplates then FNP.Nameplates:LayoutExtras(plate) end
+    if layout then FNP.Nameplates:LayoutExtras(plate) end
     if not row:IsShown() then row:Show() end
 end
 
-local function Tick()
+-- Every bound plate, after a target or settings change.
+local function DrawAll()
     local now = GetTime()
-    for guid, state in pairs(CD.states) do
-        for i = #state.spells, 1, -1 do
-            if state.spells[i].ends <= now then table.remove(state.spells, i) end
-        end
-        if #state.spells == 0 then CD.states[guid] = nil; CD.count = CD.count - 1 end
+    for plate in pairs(FNP.libnameplate.plates) do
+        local guid = plate.fnpUnitGUID
+        if guid then Draw(plate, guid, now) else HideRow(plate) end
     end
-    for guid, plate in pairs(visible) do
-        if C_NamePlate.GetNamePlateForGUID(guid) ~= plate then
-            visible[guid] = nil
-            -- A recycled plate may already display its new unit's icons.
-            if plate.fnpEnemyCooldowns and plate.fnpEnemyCooldowns.guid == guid then HideRow(plate) end
-        else Draw(plate, guid, now, true) end
-    end
-    if CD.count == 0 and ticker then ticker:Cancel(); ticker = nil end
 end
 
 function CD:Refresh()
-    if self.enabled then ReadSettings(); Tick() end
+    if not self.enabled then return end
+    ReadSettings()
+    if opt.targetOnly then driver:RegisterEvent("PLAYER_TARGET_CHANGED")
+    else driver:UnregisterEvent("PLAYER_TARGET_CHANGED") end
+    DrawAll()
 end
 
-function CD:Observe(unit, id)
-    if not self.enabled or type(id) ~= "number" or id <= 0 then return end
-    if not unit or not UnitExists(unit) or not UnitIsPlayer(unit) or not UnitCanAttack("player", unit) then return end
-    local guid = UnitGUID(unit)
-    if not guid or guid == UnitGUID("player") then return end
+-- Most casts nearby have no cooldown worth showing: the cached spell record
+-- answers that before any unit is asked about.
+function CD:Observe(guid, id)
+    if not self.enabled then return end
     local data = Metadata(id)
-    if not data then return end
+    if not data or not UnitIsPlayer(guid) or not UnitCanAttack("player", guid) then return end
     local now, state = GetTime(), self.states[guid]
     if not state then
         if self.count >= MAX_UNITS then
@@ -189,7 +190,8 @@ function CD:Observe(unit, id)
                 if not oldestTime or candidate.last < oldestTime then oldestGUID, oldestTime = key, candidate.last end
             end
             self.states[oldestGUID] = nil; self.count = self.count - 1
-            if visible[oldestGUID] then HideRow(visible[oldestGUID]) end
+            local plate = C_NamePlate.GetNamePlateForGUID(oldestGUID)
+            if plate then HideRow(plate) end
         end
         state = { spells = {} }; self.states[guid] = state; self.count = self.count + 1
     end
@@ -205,68 +207,51 @@ function CD:Observe(unit, id)
     table.insert(state.spells, 1, { id = id, data = data, start = now, ends = now + data.duration })
     state.last = now
     local plate = C_NamePlate.GetNamePlateForGUID(guid)
-    if plate then visible[guid] = plate; Draw(plate, guid, now) end
-    if not ticker then ticker = C_Timer.NewTicker(0.2, Tick) end
+    if plate then Draw(plate, guid, now) end
+end
+
+local function OnEvent(_, ev, _, id, caster, _, _, _, _, spellType)
+    if ev == "SPELL_GO_OTHER" then
+        -- itemId, spellId, casterGuid
+        CD:Observe(caster, id)
+    elseif ev == "SPELL_START_OTHER" then
+        -- itemId, spellId, casterGuid, ..., spellType (1 = channel)
+        if spellType == 1 then CD:Observe(caster, id) end
+    elseif ev == "PLAYER_TARGET_CHANGED" then
+        DrawAll()
+    else
+        -- World transitions discard observations rather than guessing which
+        -- cooldown reset rules apply to a battleground or server script.
+        table.wipe(CD.states); CD.count = 0
+        for plate in pairs(FNP.libnameplate.plates) do HideRow(plate) end
+    end
 end
 
 function CD:ApplyConfiguration()
-    self.enabled = FNP.IsEnabled(module.title, true) and self:IsAvailable() and FNP.OwnsNameplates()
-    if not driver then driver = CreateFrame("Frame", "FNPEnemyCooldownEvents", UIParent) end
+    self.enabled = FNP.IsEnabled(module.title, true) and FNP.OwnsNameplates()
+    local lib = FNP.libnameplate
+    if not driver then
+        driver = CreateFrame("Frame", "FNPEnemyCooldownEvents")
+        FNP.SetEventHandler(driver, OnEvent)
+        table.insert(lib.OnAdded, function(plate, guid)
+            if CD.enabled and guid then Draw(plate, guid, GetTime()) else HideRow(plate) end
+        end)
+        table.insert(lib.OnRemoved, HideRow)
+    end
     driver:UnregisterAllEvents()
     if not self.enabled then
-        if ticker then ticker:Cancel(); ticker = nil end
-        if visible then for _, plate in pairs(visible) do HideRow(plate) end end
-        self.states, self.count, visible = {}, 0, {}
+        table.wipe(self.states); self.count = 0
+        for plate in pairs(lib.plates) do HideRow(plate) end
         return
     end
-    visible = visible or {}
-    ReadSettings()
-    -- NamPower's cast events for other casters; SuperWoW's UNIT_CASTEVENT would also
-    -- call us on every melee swing nearby.
-    for _, ev in ipairs({ "SPELL_GO_OTHER", "SPELL_START_OTHER", "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "PLAYER_ENTERING_WORLD",
-        "PLAYER_TARGET_CHANGED" }) do
-        driver:RegisterEvent(ev)
-    end
-    FNP.SetEventHandler(driver, function(_, ev, unit, id, caster, _, _, _, _, spellType)
-        if ev == "PLAYER_TARGET_CHANGED" then CD:Refresh()
-        elseif ev == "SPELL_GO_OTHER" then
-            -- itemId, spellId, casterGuid
-            CD:Observe(caster, id)
-        elseif ev == "SPELL_START_OTHER" then
-            -- itemId, spellId, casterGuid, ..., spellType (1 = channel)
-            if spellType == 1 then CD:Observe(caster, id) end
-        elseif ev == "NAME_PLATE_UNIT_ADDED" then
-            local guid = unit and UnitGUID(unit)
-            local plate = guid and C_NamePlate.GetNamePlateForUnit(unit)
-            if plate then visible[guid] = plate; Draw(plate, guid, GetTime()) end
-        elseif ev == "NAME_PLATE_UNIT_REMOVED" then
-            local guid = unit and UnitGUID(unit)
-            local plate = guid and visible[guid]
-            if plate then
-                visible[guid] = nil
-                if plate.fnpEnemyCooldowns and plate.fnpEnemyCooldowns.guid == guid then HideRow(plate) end
-            end
-        else
-            -- World transitions discard observations rather than guessing which
-            -- cooldown reset rules apply to a battleground or server script.
-            CD.states, CD.count = {}, 0
-            if ticker then ticker:Cancel(); ticker = nil end
-            for _, plate in pairs(visible) do HideRow(plate) end
-            visible = {}
-        end
-    end)
-    if not initialized then
-        initialized = true
-        table.insert(FNP.libnameplate.OnShow, function(plate)
-            if plate.fnpEnemyCooldowns and plate.fnpEnemyCooldowns.guid ~= plate.fnpUnitGUID then HideRow(plate) end
-        end)
-    end
-    for _, guid in ipairs(C_NamePlate.GetNamePlateGUIDs()) do
-        local plate = C_NamePlate.GetNamePlateForGUID(guid)
-        if plate then visible[guid] = plate end
-    end
-    Tick()
+    -- NamPower's cast events for other casters; SuperWoW's UNIT_CASTEVENT would
+    -- also call us on every melee swing nearby.
+    for _, ev in ipairs(EVENTS) do driver:RegisterEvent(ev) end
+    self:Refresh()
 end
 
 module.enable = function() CD:ApplyConfiguration() end
-module.apply = module.enable
+module.shutdown = function()
+    CD.enabled = false
+    if driver then driver:UnregisterAllEvents() end
+end

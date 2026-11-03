@@ -15,12 +15,15 @@ local function Dimensions(object, width, height)
     if object:GetHeight() ~= height then object:SetHeight(height) end
 end
 
+-- Native parts that scale with the plate, with their stock sizes.
+local PARTS = { {"healthbar", "fnpHb", 110, 14}, {"border", "fnpBorder", 128, 16},
+    {"glow", "fnpGlow", 128, 16}, {"levelicon", "fnpLevel", 11, 11}, {"dragon", "fnpDragon", 128, 64} }
+
 local function Capture(plate)
     if not plate.fnpOrigW then
         plate.fnpOrigW, plate.fnpOrigH = plate:GetWidth(), plate:GetHeight()
         if plate.fnpOrigW <= 20 then plate.fnpOrigW, plate.fnpOrigH = 110, 14 end
-        for _, entry in ipairs({ {"healthbar", "fnpHb", 110, 14}, {"border", "fnpBorder", 128, 16},
-            {"glow", "fnpGlow", 128, 16}, {"levelicon", "fnpLevel", 11, 11}, {"dragon", "fnpDragon", 128, 64} }) do
+        for _, entry in ipairs(PARTS) do
             local object, prefix = plate[entry[1]], entry[2]
             local w, h = object and object:GetWidth(), object and object:GetHeight()
             plate[prefix .. "OrigW"] = w and w > 0 and w or entry[3]
@@ -73,7 +76,7 @@ local function Apply(plate)
     -- Engine-created name/level regions retain their original parent, font,
     -- scale and anchors. Do not insert them into Lua-owned scaling frames.
     FNP.LayoutNameplateCastbar(plate)
-    if FNP.Nameplates then FNP.Nameplates:LayoutExtras(plate) end
+    FNP.Nameplates:LayoutExtras(plate)
 end
 
 FNP.ApplyNameplateScale = Apply
@@ -93,10 +96,11 @@ module.enable = function(self)
     end
     self.watcher:UnregisterAllEvents()
     if FNP.IsEnabled(module.title) and FNP.OwnsNameplates() then
-        -- DISPLAY_SIZE_CHANGED is a 1.12 event. UI_SCALE_CHANGED is in no
-        -- FrameXML file or DLL doc, so it is asked for only if the client knows it.
-        self.watcher:RegisterEvent("DISPLAY_SIZE_CHANGED")
-        if C_EventUtils.IsEventValid("UI_SCALE_CHANGED") then self.watcher:RegisterEvent("UI_SCALE_CHANGED") end
+        -- ClassicAPI fires it when the UI scale or the window size is applied.
+        self.watcher:RegisterEvent("UI_SCALE_CHANGED")
     end
     FNP.RefreshNameplateScale()
+end
+module.shutdown = function(self)
+    if self.watcher then self.watcher:UnregisterAllEvents() end
 end

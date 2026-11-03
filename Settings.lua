@@ -31,7 +31,7 @@ end
 local function Live() return FNP.OwnsNameplates() end
 local function Module(title) return function() return Live() and FNP.IsEnabled(title) end end
 local Details, Scale, Castbars = Module("Nameplate Details"), Module("Nameplate Scale"), Module("Nameplate Castbar")
-local function Cooldowns() return Live() and FNP.IsEnabled("Enemy Nameplate Cooldowns") and CD:IsAvailable() end
+local Cooldowns = Module("Enemy Nameplate Cooldowns")
 local function On(key, fallback) return FNP.GetOverride(key, fallback) == 1 end
 local function Both(a, b) return function() return a() and b() end end
 local function Set(key, fallback) return function() return On(key, fallback) end end
@@ -123,7 +123,7 @@ Feature(general, "Nameplate Details", "Target, text, auras and marks",
 Feature(general, "Nameplate Class Colors", "Class colors for players", "Color enemy and friendly player bars by class.", -232)
 Feature(general, "Nameplate Castbar", "Enemy castbars", "A castbar under each casting enemy.", -258)
 Feature(general, "Enemy Nameplate Cooldowns", "Enemy cooldowns",
-    "Icons for cooldowns seen used by enemy players. Needs NamPower 4.6.2+.", -284)
+    "Icons for cooldowns seen used by enemy players.", -284)
 UI.Heading(general, "Size", RIGHT, -258)
 Slider(general, "nameplate_scale", 1, 0.1, 4, 0.05, "Plate size", RIGHT, -278, Scale, Times)
 Option(general, "nameplate_follow_ui", 0, "Follow UI scale", "Multiply plate size by the game's UI scale.",
@@ -140,8 +140,7 @@ table.insert(syncs, function()
     UI.Sync(master, enabled)
     local text = ""
     if enabled ~= FNP.nameplatesEnabled then text = "Type /reload to apply."
-    elseif not enabled then text = "Off: Blizzard plates are in use."
-    elseif not CD:IsAvailable() then text = "Enemy cooldowns need NamPower 4.6.2+." end
+    elseif not enabled then text = "Off: Blizzard plates are in use." end
     status:SetText(text)
 end)
 
