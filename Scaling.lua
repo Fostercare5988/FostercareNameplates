@@ -38,8 +38,8 @@ function FNP.LayoutNameplateCastbar(plate)
     local scale = plate.fnpVisualScale or 1
     local height = FNP.GetNumber("nameplate_cast_height", 10, 6, 18) * scale
     local gap = FNP.GetNumber("nameplate_cast_gap", 3, 0, 16) * scale
-    Dimensions(cb, (plate.healthbar or plate):GetWidth() - 22 * scale, height)
-    local anchor = plate.healthbar or plate
+    Dimensions(cb, plate.healthbar:GetWidth() - 22 * scale, height)
+    local anchor = plate.healthbar
     local p, a, r, x, y = cb:GetPoint(1)
     if p ~= "TOP" or a ~= anchor or r ~= "BOTTOM" or x ~= 8 * scale or y ~= -gap then
         cb:ClearAllPoints(); cb:SetPoint("TOP", anchor, "BOTTOM", 8 * scale, -gap)

@@ -21,6 +21,10 @@ local function Unbind(plate) Bind(plate, nil) end
 -- so each frame puts the class color back when the bar shows another one. The
 -- color read back after our write is what "ours" looks like; the engine's own
 -- is kept for when class colors are turned off.
+-- UNVERIFIED: test in game: does the engine color the bar every frame? Target
+-- an NPC; "300 0 0 1" (blue stays) means only on events (Paint can go), red
+-- back at 2 means every frame (it stays):
+-- /run local b,t=C_NamePlate.GetNamePlateForUnit("target"):GetChildren(),0 b:SetStatusBarColor(0,0,1) CreateFrame("Frame"):SetScript("OnUpdate",function() t=t+1 if t==2 or t==300 then print(t,b:GetStatusBarColor()) end end)
 local function Paint(plate)
     local color = plate.fnpClassColor
     if not color then return end

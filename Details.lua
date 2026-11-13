@@ -76,9 +76,9 @@ function NP:LayoutMark(plate, restore)
         return
     end
     local size, position = self.settings.markSize, self.settings.markPosition
-    local anchor, point, relative, x, y = plate.healthbar or plate, "RIGHT", "LEFT", -4, 0
+    local anchor, point, relative, x, y = plate.healthbar, "RIGHT", "LEFT", -4, 0
     if position == "above" then
-        anchor, point, relative, x, y = plate.name or plate, "BOTTOM", "TOP", 0, 4
+        anchor, point, relative, x, y = plate.name, "BOTTOM", "TOP", 0, 4
     elseif position == "right" then point, relative, x = "LEFT", "RIGHT", 18 * (plate.fnpVisualScale or 1) end
     local p, a, r, ox, oy = icon:GetPoint(1)
     if p ~= point or a ~= anchor or r ~= relative or ox ~= x or oy ~= y then
@@ -136,7 +136,7 @@ function NP:LayoutExtras(plate)
     if row then
         local y = self:TopSpace(plate)
         if row.fnpLayoutY ~= y then
-            row.fnpLayoutY = y; row:ClearAllPoints(); row:SetPoint("BOTTOM", plate.name or plate, "TOP", 0, y)
+            row.fnpLayoutY = y; row:ClearAllPoints(); row:SetPoint("BOTTOM", plate.name, "TOP", 0, y)
         end
     end
     local cds = plate.fnpEnemyCooldowns
@@ -144,7 +144,7 @@ function NP:LayoutExtras(plate)
         local y = self:TopSpace(plate) + (plate.fnpAuraHeight or 0)
             + FNP.NameplateCooldowns.offset
         if cds.fnpLayoutY ~= y then
-            cds.fnpLayoutY = y; cds:ClearAllPoints(); cds:SetPoint("BOTTOM", plate.name or plate, "TOP", 0, y)
+            cds.fnpLayoutY = y; cds:ClearAllPoints(); cds:SetPoint("BOTTOM", plate.name, "TOP", 0, y)
         end
     end
 end
@@ -153,8 +153,8 @@ function NP:Health(plate, unit)
     local show = self.settings.health > 0 and unit and (not self.settings.healthTarget or plate.fnpIsTarget)
     local label = plate.fnpHealth
     if not show then if label then Visible(label, false) end; return end
-    local hp, maximum = UnitHealth(unit) or 0, UnitHealthMax(unit)
-    if not maximum or maximum <= 0 then if label then Visible(label, false) end; return end
+    local hp, maximum = UnitHealth(unit), UnitHealthMax(unit)
+    if maximum <= 0 then if label then Visible(label, false) end; return end
     if not label then
         label = plate.healthbar:CreateFontString(nil, "OVERLAY")
         label:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
@@ -204,7 +204,7 @@ function NP:Level(plate, unit)
     PlaceLevel(plate)
     -- Same rules as the stock target frame: difficulty color for enemies,
     -- gold otherwise, "??" where the game shows a skull.
-    local level, r, g, b = UnitLevel(unit) or 0, 1, 0.82, 0
+    local level, r, g, b = UnitLevel(unit), 1, 0.82, 0
     if level <= 0 then r, g, b = 1, 0.1, 0.1
     elseif UnitCanAttack("player", unit) then
         local color = GetDifficultyColor(level); r, g, b = color.r, color.g, color.b
@@ -224,6 +224,10 @@ local function AuraIcon(row, index)
     icon.texture:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     -- The client counts the time down (countdownForCooldowns CVar 1): whole
     -- seconds, then minutes from 60 s. No sweep, no flash; only the number.
+    -- No template: CooldownFrameTemplate is the 1.12 Model one (Cooldown.xml).
+    -- UNVERIFIED: test in game: did that template scale the frame? 0.75 means
+    -- aura and cooldown numbers are now a quarter larger than before:
+    -- /run print(CreateFrame("Cooldown",nil,UIParent,"CooldownFrameTemplate"):GetScale())
     local sweep = CreateFrame("Cooldown", nil, icon)
     sweep:SetAllPoints(icon); sweep:EnableMouse(false)
     sweep:SetDrawSwipe(false); sweep:SetDrawBling(false); sweep:SetCountdownAbbrevThreshold(60)
@@ -360,7 +364,7 @@ function NP:Combo(plate)
     local row = plate.fnpCombo
     local y = self.settings.marks and self.settings.markPosition == "above" and self.settings.markSize + 8 or 4
     if not self.settings.marks and plate.raidicon and Marked(plate) then y = plate.raidicon:GetHeight() + 8 end
-    if row.fnpY ~= y then row.fnpY = y; row:ClearAllPoints(); row:SetPoint("BOTTOM", plate.name or plate, "TOP", 0, y) end
+    if row.fnpY ~= y then row.fnpY = y; row:ClearAllPoints(); row:SetPoint("BOTTOM", plate.name, "TOP", 0, y) end
     for i = 1, 5 do Visible(row.pips[i], i <= count) end
     Visible(row, true)
 end
@@ -447,13 +451,16 @@ local function FixedFade(unit)
     -- Grey by the stock rule (GetDifficultyColor, QuestLogFrame.lua): more
     -- levels below you than the green range. Skull levels never fade.
     if s.fadeTrivial then
-        local level = UnitLevel(unit) or 0
+        local level = UnitLevel(unit)
         if level > 0 and UnitLevel("player") - level > GetQuestGreenRange() then return true end
     end
     return false
 end
 
 -- Combat changes a neutral unit's flags: UNIT_FLAGS asks again.
+-- UNVERIFIED: test in game: target a neutral mob, run this, then attack it; a
+-- line "UNIT_FLAGS 1" shows the event says when combat starts:
+-- /run local f=CreateFrame("Frame") f:RegisterUnitEvent("UNIT_FLAGS","target") f:SetScript("OnEvent",function() print("UNIT_FLAGS",UnitAffectingCombat("target")) end)
 local function Faded(plate, unit)
     if plate.fnpFixedFade == nil then plate.fnpFixedFade = FixedFade(unit) end
     if plate.fnpFixedFade then return true end
@@ -485,7 +492,7 @@ function NP:Glow(plate)
         -- This stock glow uses a black background; additive blending keeps
         -- that background transparent instead of covering the name/bar.
         glow:SetBlendMode("ADD")
-        glow:SetVertexColor(1, 0.8, 0.3, 0.7); glow:SetAllPoints(plate.border or plate.healthbar)
+        glow:SetVertexColor(1, 0.8, 0.3, 0.7); glow:SetAllPoints(plate.border)
         plate.fnpTargetGlow = glow
     end
     if glow then Visible(glow, show) end
@@ -506,6 +513,10 @@ end
 -- when the plate shows something else. A plate reports its alpha as a byte
 -- (n/255) and the CVars replace writes of 1 and 0.5 (ClassicAPI 1.17.8), so
 -- compare with what the plate showed after our last write.
+-- UNVERIFIED: test in game: does the engine write plate alpha every frame? With
+-- Plate details off, target an NPC; "300 0.2" means only on changes (Render
+-- can go), "2 1" every frame (it stays):
+-- /run local p,t=C_NamePlate.GetNamePlateForUnit("target"),0 p:SetAlpha(0.2) CreateFrame("Frame"):SetScript("OnUpdate",function() t=t+1 if t==2 or t==300 then print(t,p:GetAlpha()) end end)
 local function Render(plate)
     local alpha = plate.fnpAlpha
     if alpha and plate:GetAlpha() ~= plate.fnpDrawnAlpha then
