@@ -5,25 +5,9 @@ if not FNP then return end
 -- to a vararg function builds an `arg` table, and plate OnUpdate runs for every
 -- plate every frame (about 320 KB/s at 40 plates, audit 2026-10-26).
 
--- ClassicAPI HookScript invokes the previous script without positional args.
--- Preserve modern owners too: forward the original call to them, and normalize
--- only our posthook. Native FrameXML still receives its original globals.
-FNP.HookScript = function(frame, script, func)
-    if not frame or not func then return end
-    local previous = frame:GetScript(script)
-    frame:SetScript(script, function(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10)
-        if previous then previous(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10) end
-        if script == "OnEvent" then
-            return func(frame, FNP.EventArgs(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10))
-        elseif a1 == frame then
-            return func(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10)
-        end
-        return func(frame, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
-    end)
-end
-
--- ClassicAPI may dispatch positional arguments or native globals. Decode once
--- at the event boundary; module logic always receives (frame, event, payload).
+-- Positional script arguments are ClassicAPI's global switch, and any addon can
+-- turn it off (API.md, SetModernScriptArgs). Decode once at the event boundary;
+-- module logic always receives (frame, event, payload).
 function FNP.EventArgs(first, second, a3, a4, a5, a6, a7, a8, a9, a10)
     if type(first) == "table" then return second, a3, a4, a5, a6, a7, a8, a9, a10 end
     if type(first) == "string" then return first, second, a3, a4, a5, a6, a7, a8, a9, a10 end
@@ -48,7 +32,7 @@ end
 
 function FNP.GetOverride(key, default)
     local value = FostercareNameplates_Config.overwrites[key]
-    if value == nil then value = FNP.overwrites and FNP.overwrites[key] end
+    if value == nil then value = FNP.overwrites[key] end
     if value == nil then return default end
     return value
 end
@@ -78,6 +62,5 @@ end
 
 function FNP.SetOverride(key, value)
     FostercareNameplates_Config.overwrites[key] = value
-    FNP.overwrites = FNP.overwrites or {}
     FNP.overwrites[key] = value
 end

@@ -1,8 +1,9 @@
 local FNP = FostercareNameplates
 if not FNP then return end
 
--- Native plate/input ownership stays intact. Health and auras use coalesced
--- events; render callbacks repair native visuals and animate/reconcile casts.
+-- Native plate/input ownership stays intact. Everything is drawn on events
+-- (health and auras coalesced to one pass per frame); the one per-frame
+-- callback, Render, puts back the plate's alpha when the engine changed it.
 local defaults = { nameplate_marks = 1, nameplate_raidmark_size = 20,
     nameplate_raidmark_position = "left", nameplate_target_glow = 0,
     nameplate_target_scale = 1.1, nameplate_other_alpha = 0.8,
@@ -29,6 +30,12 @@ end
 
 local function Text(object, value)
     if object.fnpText ~= value then object.fnpText = value; object:SetText(value) end
+end
+
+-- Whether the plate's unit wears a raid mark: the mark itself, not the
+-- engine's icon, which it shows in its own time.
+local function Marked(plate)
+    return plate.fnpDetailGUID and GetRaidTargetIndex(plate.fnpDetailGUID)
 end
 
 local function HideAuras(plate)
@@ -90,6 +97,7 @@ function NP:RefreshMarks()
     self.settings.marks = self.active and FNP.GetOverride("nameplate_marks", 1) == 1
     for plate in pairs(lib.plates) do
         if plate:IsShown() then self:LayoutMark(plate); self:Combo(plate); self:LayoutExtras(plate) end
+        if self.active and plate.fnpDetailGUID then self:Alpha(plate, plate.fnpDetailGUID) end
     end
 end
 
@@ -108,7 +116,7 @@ end
 function NP:TopSpace(plate)
     local space = 6
     if self.settings.marks and self.settings.markPosition == "above" then space = space + self.settings.markSize + 4 end
-    if not self.settings.marks and plate.raidicon and plate.raidicon:IsShown() then space = space + plate.raidicon:GetHeight() + 4 end
+    if not self.settings.marks and plate.raidicon and Marked(plate) then space = space + plate.raidicon:GetHeight() + 4 end
     if self.settings.combo and plate.fnpIsTarget then space = space + 10 end
     return space
 end
@@ -216,7 +224,7 @@ local function AuraIcon(row, index)
     icon.texture:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     -- The client counts the time down (countdownForCooldowns CVar 1): whole
     -- seconds, then minutes from 60 s. No sweep, no flash; only the number.
-    local sweep = CreateFrame("Cooldown", nil, icon, "CooldownFrameTemplate")
+    local sweep = CreateFrame("Cooldown", nil, icon)
     sweep:SetAllPoints(icon); sweep:EnableMouse(false)
     sweep:SetDrawSwipe(false); sweep:SetDrawBling(false); sweep:SetCountdownAbbrevThreshold(60)
     local number = sweep:GetCountdownFontString()
@@ -351,7 +359,7 @@ function NP:Combo(plate)
     end
     local row = plate.fnpCombo
     local y = self.settings.marks and self.settings.markPosition == "above" and self.settings.markSize + 8 or 4
-    if not self.settings.marks and plate.raidicon and plate.raidicon:IsShown() then y = plate.raidicon:GetHeight() + 8 end
+    if not self.settings.marks and plate.raidicon and Marked(plate) then y = plate.raidicon:GetHeight() + 8 end
     if row.fnpY ~= y then row.fnpY = y; row:ClearAllPoints(); row:SetPoint("BOTTOM", plate.name or plate, "TOP", 0, y) end
     for i = 1, 5 do Visible(row.pips[i], i <= count) end
     Visible(row, true)
@@ -410,9 +418,9 @@ function NP:Select(plate, selected)
     elseif self.targetPlate == plate then self.targetPlate = nil end
     if plate.fnpIsTarget ~= selected then
         plate.fnpIsTarget = selected
-        if FNP.ApplyNameplateScale then FNP.ApplyNameplateScale(plate) end
+        FNP.ApplyNameplateScale(plate)
     end
-    self:Combo(plate); self:LayoutExtras(plate); self:LayoutMark(plate)
+    self:Combo(plate); self:LayoutExtras(plate); self:LayoutMark(plate); self:Glow(plate)
     self:Queue(plate, "health")
 end
 
@@ -422,6 +430,9 @@ function NP:TargetChanged()
     self.targetPlate = current and lib.plates[current] and current or nil
     if previous and previous ~= self.targetPlate then self:Select(previous, false) end
     if self.targetPlate then self:Select(self.targetPlate, true) end
+    for plate in pairs(lib.plates) do
+        if plate.fnpDetailGUID then self:Alpha(plate, plate.fnpDetailGUID) end
+    end
 end
 
 -- CreatureType.dbc rows in this client: 8 Critter, 11 Totem.
@@ -442,48 +453,33 @@ local function FixedFade(unit)
     return false
 end
 
-local function Faded(plate, unit, now)
+-- Combat changes a neutral unit's flags: UNIT_FLAGS asks again.
+local function Faded(plate, unit)
     if plate.fnpFixedFade == nil then plate.fnpFixedFade = FixedFade(unit) end
     if plate.fnpFixedFade then return true end
-    if not NP.settings.fadeNeutral then return false end
-    -- Combat state changes without a plate event; recheck it on a slow cadence.
-    if not plate.fnpFadeAt or now >= plate.fnpFadeAt then
-        plate.fnpFadeAt = now + 0.5
-        plate.fnpNeutralIdle = UnitReaction(unit, "player") == 4 and not UnitAffectingCombat(unit)
-    end
-    return plate.fnpNeutralIdle
+    return NP.settings.fadeNeutral and UnitReaction(unit, "player") == 4 and not UnitAffectingCombat(unit)
 end
 
--- A plate that gets a unit is drawn at once. Hiding it first and drawing on
--- the next frame made the health text flicker whenever a plate came back.
-local function Bind(plate, unit)
-    plate.fnpFixedFade, plate.fnpFadeAt = nil, nil
-    if not unit then Clear(plate); plate.fnpDetailGUID = nil; return end
-    NP.pending[plate], plate.fnpNeedsDetails, plate.fnpDetailGUID = nil, nil, unit
-    NP:Select(plate, unit == NP.targetGUID)
-    NP:Health(plate, unit); NP:Level(plate, unit); NP:Auras(plate, unit); NP:Targeting(plate, unit, true)
+-- The alpha a plate should have, worked out when one of its inputs changes:
+-- your target, the unit, its raid mark, its flags, the settings. Other plates
+-- dim while you have a target, faded kinds go further, a marked unit stays at
+-- 0.9 or more.
+function NP:Alpha(plate, unit)
+    local s, wanted = self.settings, 1
+    if unit ~= self.targetGUID then
+        if self.targetGUID then wanted = s.otherAlpha end
+        if s.fade and Faded(plate, unit) then wanted = math.min(wanted, s.fadeAlpha) end
+    end
+    if GetRaidTargetIndex(unit) then wanted = math.max(wanted, 0.9) end
+    if wanted ~= plate.fnpAlpha then
+        plate.fnpAlpha = wanted; plate:SetAlpha(wanted); plate.fnpDrawnAlpha = plate:GetAlpha()
+    end
 end
 
-local function Render(plate, unit, now)
-    if not NP.active then return end
-    if plate.fnpDetailGUID ~= unit then Bind(plate, unit) end
-    local selected = unit and unit == NP.targetGUID and true or false
-    if selected ~= plate.fnpIsTarget then NP:Select(plate, selected) end
-    local wanted = NP.targetGUID and not selected and NP.settings.otherAlpha or 1
-    if unit and not selected and NP.settings.fade and Faded(plate, unit, now) then
-        wanted = math.min(wanted, NP.settings.fadeAlpha)
-    end
-    if plate.raidicon and plate.raidicon:IsShown() then
-        wanted = math.max(wanted, 0.9); NP:LayoutMark(plate)
-    end
-    -- A plate reports its alpha as a byte (n/255) and the player's
-    -- nameplate*Alpha CVars replace writes of 1 and 0.5 (ClassicAPI 1.17.8),
-    -- so compare with what the plate showed after our last write.
-    if wanted ~= plate.fnpAlpha or plate:GetAlpha() ~= plate.fnpDrawnAlpha then
-        plate:SetAlpha(wanted); plate.fnpAlpha, plate.fnpDrawnAlpha = wanted, plate:GetAlpha()
-    end
+function NP:Glow(plate)
+    local show = self.settings.glow and plate.fnpIsTarget
     local glow = plate.fnpTargetGlow
-    if selected and NP.settings.glow and not glow then
+    if show and not glow then
         glow = plate:CreateTexture(nil, "BORDER")
         glow:SetTexture("Interface\\Tooltips\\Nameplate-Glow")
         -- This stock glow uses a black background; additive blending keeps
@@ -492,7 +488,29 @@ local function Render(plate, unit, now)
         glow:SetVertexColor(1, 0.8, 0.3, 0.7); glow:SetAllPoints(plate.border or plate.healthbar)
         plate.fnpTargetGlow = glow
     end
-    if glow then Visible(glow, selected and NP.settings.glow) end
+    if glow then Visible(glow, show) end
+end
+
+-- A plate that gets a unit is drawn at once. Hiding it first and drawing on
+-- the next frame made the health text flicker whenever a plate came back.
+local function Bind(plate, unit)
+    plate.fnpFixedFade = nil
+    NP.pending[plate], plate.fnpNeedsDetails, plate.fnpDetailGUID = nil, nil, unit
+    NP:Select(plate, unit == NP.targetGUID)
+    NP:Alpha(plate, unit)
+    NP:Health(plate, unit); NP:Level(plate, unit); NP:Auras(plate, unit); NP:Targeting(plate, unit, true)
+end
+
+-- The engine sets a plate's alpha itself (its target dimming, ClassicAPI's
+-- nameplate*Alpha CVars) and no event says when; each frame puts ours back
+-- when the plate shows something else. A plate reports its alpha as a byte
+-- (n/255) and the CVars replace writes of 1 and 0.5 (ClassicAPI 1.17.8), so
+-- compare with what the plate showed after our last write.
+local function Render(plate)
+    local alpha = plate.fnpAlpha
+    if alpha and plate:GetAlpha() ~= plate.fnpDrawnAlpha then
+        plate:SetAlpha(alpha); plate.fnpDrawnAlpha = plate:GetAlpha()
+    end
 end
 
 function NP:Shutdown()
@@ -534,10 +552,6 @@ function NP:ApplyConfiguration(layoutOnly)
     s.auraCount = math.floor(FNP.GetNumber("nameplate_aura_count", 3, 1, 6))
     s.combo = FNP.GetOverride("nameplate_combo", 1) == 1
     s.targeting = FNP.GetOverride("nameplate_targeting", 0) == 1
-    -- UNIT_TARGET (ClassicAPI 1.18) says when an enemy turns to someone else.
-    if driver then
-        if self.active and s.targeting then FNP.RegisterPlateEvent(driver, "UNIT_TARGET") else driver:UnregisterEvent("UNIT_TARGET") end
-    end
     s.fadeCritters = FNP.GetOverride("nameplate_fade_critters", 0) == 1
     s.fadeTotems = FNP.GetOverride("nameplate_fade_totems", 0) == 1
     s.fadePets = FNP.GetOverride("nameplate_fade_pets", 0) == 1
@@ -545,20 +559,31 @@ function NP:ApplyConfiguration(layoutOnly)
     s.fadeNeutral = FNP.GetOverride("nameplate_fade_neutral", 0) == 1
     s.fade = s.fadeCritters or s.fadeTotems or s.fadePets or s.fadeTrivial or s.fadeNeutral
     s.fadeAlpha = FNP.GetNumber("nameplate_fade_alpha", 0.3, 0.1, 0.8)
+    -- UNIT_TARGET (ClassicAPI 1.18) says when an enemy turns to someone else,
+    -- UNIT_FLAGS when a unit's combat flag changes.
+    if driver then
+        if self.active and s.targeting then FNP.RegisterPlateEvent(driver, "UNIT_TARGET") else driver:UnregisterEvent("UNIT_TARGET") end
+        if self.active and s.fadeNeutral then FNP.RegisterPlateEvent(driver, "UNIT_FLAGS") else driver:UnregisterEvent("UNIT_FLAGS") end
+    end
+    for plate in pairs(lib.plates) do plate.fnpFixedFade = nil end
     if self.active then self:TargetChanged() end
     for plate in pairs(lib.plates) do
-        plate.fnpFixedFade, plate.fnpFadeAt = nil, nil
         if self.active then
-            self:LayoutMark(plate)
-            if not s.level then NativeLevel(plate, true) end
-            if plate:IsShown() and not layoutOnly then
-                self:Queue(plate, "health"); self:Queue(plate, "level"); self:Queue(plate, "auras"); self:Queue(plate, "targeting")
-                self:Combo(plate)
+            -- A plate that got its unit while details were off.
+            if plate.fnpUnitGUID and plate.fnpDetailGUID ~= plate.fnpUnitGUID then
+                Bind(plate, plate.fnpUnitGUID)
+            else
+                self:LayoutMark(plate)
+                if not s.level then NativeLevel(plate, true) end
+                if plate:IsShown() and not layoutOnly then
+                    self:Queue(plate, "health"); self:Queue(plate, "level"); self:Queue(plate, "auras"); self:Queue(plate, "targeting")
+                    self:Combo(plate)
+                end
             end
         elseif wasActive then
             plate.fnpIsTarget = false
             Clear(plate); self:LayoutMark(plate, true); NativeLevel(plate, true)
-            plate:SetAlpha(1); plate.fnpAlpha, plate.fnpDrawnAlpha = nil, nil
+            plate:SetAlpha(1); plate.fnpAlpha, plate.fnpDrawnAlpha, plate.fnpDetailGUID = nil, nil, nil
         end
     end
     if wasActive and not self.active then self.targetPlate, self.targetGUID = nil, nil; FNP.RefreshNameplateScale() end
@@ -573,19 +598,21 @@ module.enable = function(self)
             elseif ev == "PLAYER_COMBO_POINTS" then if NP.targetPlate then NP:Combo(NP.targetPlate) end
             elseif ev == "RAID_TARGET_UPDATE" then NP:RefreshMarks()
             elseif ev == "PLAYER_ENTERING_WORLD" then
+                -- Queued, not cleared first: a cleared plate showed no text until
+                -- the next frame (the flicker Bind avoids).
                 for plate in pairs(lib.plates) do
-                    Clear(plate); NP:Queue(plate, "health"); NP:Queue(plate, "level"); NP:Queue(plate, "auras"); NP:Queue(plate, "targeting")
+                    NP:Queue(plate, "health"); NP:Queue(plate, "level"); NP:Queue(plate, "auras"); NP:Queue(plate, "targeting")
                 end
                 NP:TargetChanged()
             elseif unit then
-                if ev == "UNIT_TARGET" then
+                if ev == "UNIT_TARGET" or ev == "UNIT_FLAGS" or ev == "UNIT_FACTION" then
                     local plate = C_NamePlate.GetNamePlateForUnit(unit)
-                    if plate and lib.plates[plate] then NP:Queue(plate, "targeting") end
-                    return
-                end
-                if ev == "UNIT_FACTION" then
-                    local plate = C_NamePlate.GetNamePlateForUnit(unit)
-                    if plate and lib.plates[plate] then NP:Queue(plate, "auras"); NP:Queue(plate, "targeting") end
+                    if not plate or not lib.plates[plate] then return end
+                    if ev == "UNIT_TARGET" then NP:Queue(plate, "targeting"); return end
+                    if ev == "UNIT_FACTION" then
+                        plate.fnpFixedFade = nil; NP:Queue(plate, "auras"); NP:Queue(plate, "targeting")
+                    end
+                    if plate.fnpDetailGUID then NP:Alpha(plate, plate.fnpDetailGUID) end
                     return
                 end
                 local kind = ev == "UNIT_AURA_DELTA" and "auras" or (ev == "UNIT_LEVEL" and "level" or "health")
@@ -604,7 +631,7 @@ module.enable = function(self)
             if NP.active then Bind(plate, unit) end
         end)
         local function Removed(plate)
-            Clear(plate); plate.fnpDetailGUID = nil
+            Clear(plate); plate.fnpDetailGUID, plate.fnpAlpha, plate.fnpDrawnAlpha = nil, nil, nil
             if NP.targetPlate == plate then NP.targetPlate = nil end
             if plate.fnpIsTarget then plate.fnpIsTarget = false; FNP.ApplyNameplateScale(plate) end
         end

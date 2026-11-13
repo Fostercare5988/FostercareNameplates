@@ -10,18 +10,15 @@ local module = FNP:register({
     category = "Nameplates",
     enabled = true,
 })
--- "Grey when uninterruptible" was on for every character: always grey now.
-FostercareNameplates_Config.overwrites.nameplate_uninterruptible = nil
-
 -- The cast events that fire for other units (ClassicAPI docs, UNIT_SPELLCAST_*).
 -- DELAYED and CHANNEL_UPDATE fire only for the player: another unit's pushback
 -- is never sent to the client, so its bar cannot move during a cast.
 local CAST_EVENTS = { "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_INTERRUPTED",
     "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_CHANNEL_STOP" }
-local active, events, ticker
--- Bars showing a cast. Remote cast events are best-effort; a bar whose STOP
--- never came hides at its end time.
-local shown = {}
+local active, events
+-- Bars showing a cast. Remote cast events are best-effort: a bar whose STOP
+-- never came hides when its cast ends. One timer waits for the earliest end.
+local shown, backstop, backstopAt = {}, nil, nil
 
 local backdrop = {
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -35,7 +32,6 @@ local function CreateBar(plate)
     cb:EnableMouse(false)
     cb:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
     cb:SetStatusBarColor(1, 0.8, 0, 1)
-    FNP.HookScript(plate, "OnSizeChanged", function() FNP.LayoutNameplateCastbar(plate) end)
 
     cb.texture = CreateFrame("Frame", nil, cb)
     cb.texture:EnableMouse(false)
@@ -80,12 +76,20 @@ local function HideBar(cb)
     cb.lastSpell, cb.lastTexture, cb.lastLocked, cb.lastChannel, cb.endSec = nil, nil, nil, nil, nil
 end
 
-local function Backstop()
-    local now = GetTime()
+local Backstop
+local function WakeAt(at)
+    if backstop then backstop:Cancel() end
+    backstop, backstopAt = C_Timer.NewTimer(math.max(0, at - GetTime()), Backstop), at
+end
+
+Backstop = function()
+    backstop, backstopAt = nil, nil
+    local now, nextEnd = GetTime(), nil
     for cb in pairs(shown) do
-        if now >= cb.endSec then HideBar(cb) end
+        if now >= cb.endSec then HideBar(cb)
+        elseif not nextEnd or cb.endSec < nextEnd then nextEnd = cb.endSec end
     end
-    if not next(shown) then ticker:Cancel(); ticker = nil end
+    if nextEnd then WakeAt(nextEnd) end
 end
 
 local function Show(cb, cast, texture, startTime, endTime, notInterruptible, isChannel)
@@ -98,7 +102,7 @@ local function Show(cb, cast, texture, startTime, endTime, notInterruptible, isC
     end
     if not cb:IsShown() then cb:Show() end
     shown[cb] = true
-    if not ticker then ticker = C_Timer.NewTicker(0.5, Backstop) end
+    if not backstopAt or cb.endSec < backstopAt then WakeAt(cb.endSec) end
 
     -- Grey for a cast you cannot interrupt.
     local locked = notInterruptible and true or false
@@ -172,5 +176,5 @@ end
 module.shutdown = function()
     active = false
     if events then events:UnregisterAllEvents() end
-    if ticker then ticker:Cancel(); ticker = nil end
+    if backstop then backstop:Cancel(); backstop, backstopAt = nil, nil end
 end

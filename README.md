@@ -44,7 +44,11 @@ Plates are found and bound to their units by ClassicAPI's nameplate events, and
 unit events reach the addon only for nameplate units. Health and aura work is
 coalesced into one update a frame; aura and cooldown timers are the game's own
 countdowns. Castbars ask about a cast only when a cast event or a new plate says
-so, and then fill themselves. Classes are asked once per unit. Cooldown
+so, and then fill themselves; a bar whose stop never arrives hides when its cast
+ends. Classes are asked once per unit. Plate fading, the target glow and the
+dimming of other plates follow your target, raid marks and the unit's own events;
+the only work each frame puts back the plate's fading and a player's class color
+when the game redraws them. Cooldown
 observations and spell data have fixed limits and stay out of SavedVariables.
 
 Cooldown icons appear only after an observed enemy-player ability. `~` means the
