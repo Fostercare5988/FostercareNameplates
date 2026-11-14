@@ -24,8 +24,8 @@ Countdown numbers on auras and cooldown estimates show while the game's
 
 ## Installation and settings
 
-Download **Code → Download ZIP**, extract it into `Interface/AddOns`, and rename
-the folder to `FostercareNameplates`. The folder must contain
+Download `FostercareNameplates.zip` from the [latest release](https://github.com/Fostercare5988/FostercareNameplates/releases/latest) and extract
+it into `Interface/AddOns`. The folder must contain
 `FostercareNameplates.toc`. Restart the game so the addon appears in the AddOns list.
 
 **The addon starts disabled.** Enable it in the character selection AddOns list
